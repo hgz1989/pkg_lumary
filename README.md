@@ -22,7 +22,7 @@ pip install lumary
 如需 SQLAlchemy 支持：
 
 ```bash
-pip install lumary[sqlalchemy]
+pip install lumary
 ```
 
 ## 快速开始
