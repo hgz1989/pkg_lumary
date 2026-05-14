@@ -169,7 +169,7 @@ async def fastapi_lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         app: FastAPI 应用实例
 
     Returns:
-        异步迭代器
+        异步生成器
     """
     _startup_hooks_count = len(_startup_hooks)
     if _startup_hooks_count > 0:

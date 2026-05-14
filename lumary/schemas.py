@@ -6,7 +6,7 @@
 from datetime import datetime
 from typing import TypeVar, Any, Generic
 
-from pydantic import BaseModel, ConfigDict, model_validator, model_serializer, Field
+from pydantic import BaseModel, ConfigDict, model_validator, Field
 
 T = TypeVar('T')
 
@@ -39,9 +39,9 @@ class BaseSchema(BaseModel):
         最理想方案：在验证之前调整字典顺序
         不重建实例、不二次验证、不破坏内部、零副作用
         """
-        if isinstance(values, dict) and "id" in values:
+        if isinstance(values, dict) and 'id' in values:
             # 把 id 提到最前面，其余保持顺序
-            return {"id": values.pop("id"), **values}
+            return {'id': values.pop('id'), **values}
         return values
 
     # 🔥 核心：强制自动排除 None，保留空字符串

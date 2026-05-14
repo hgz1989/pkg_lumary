@@ -5,4 +5,4 @@
 """
 from lumary import Lumary
 
-app = Lumary(debug=True,title='ASR')
+app = Lumary(debug=True, title='ASR', is_sub_app=True)

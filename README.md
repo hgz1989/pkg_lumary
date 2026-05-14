@@ -16,13 +16,14 @@
 ## 安装
 
 ```bash
+# 最小安装（仅核心，无数据库依赖）
 pip install lumary
-```
 
-如需 SQLAlchemy 支持：
+# 仅 SQLAlchemy 支持
+pip install lumary[sqlalchemy]
 
-```bash
-pip install lumary
+# 标准安装（含 SQLAlchemy + Uvicorn + pydantic-settings）
+pip install lumary[standard]
 ```
 
 ## 快速开始
@@ -119,14 +120,6 @@ ruff check lumary/
 
 # 运行测试
 pytest
-```
-
-## 打包发布
-
-```bash
-python -m build
-twine check dist/*
-twine upload dist/*
 ```
 
 ## License

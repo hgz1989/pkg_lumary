@@ -4,6 +4,7 @@
 @Description: 
 """
 from .enums import BaseEnum
+from .logger import logger_name
 from .utils import auto_load_subapp_models
 
 __all__ = [

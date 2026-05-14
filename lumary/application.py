@@ -6,7 +6,7 @@
 from importlib import import_module
 from logging import getLogger
 from pathlib import Path
-from typing import Any
+from typing import Any, AsyncGenerator
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import FastAPIError
@@ -53,12 +53,11 @@ class Lumary(FastAPI):
             summary: str = '',
             description: str = '',
             version: str = '0.1.0',
+            is_sub_app: bool = False,
             enable_cors: bool = True,
             allow_origins: list[str] | None = None,
             allow_methods: list[str] | None = None,
             allow_headers: list[str] | None = None,
-            enable_health_check: bool = False,
-            enable_access_log: bool = True,
             **kwargs: Any
     ):
         """初始化
@@ -69,15 +68,17 @@ class Lumary(FastAPI):
             summary: 应用简介
             description: 应用描述
             version: 应用版本
+            is_sub_app: 是否为子应用
             enable_cors: 是否启用 CORS 中间件
             allow_origins: 允许的源列表
             allow_methods: 允许的方法列表
             allow_headers: 允许的头列表
-            enable_health_check: 是否启用健康检查
             enable_access_log: 是否启用访问日志
             **kwargs: 其他参数
         """
         user_lifespan = kwargs.pop('lifespan', None)
+        self.user_lifespan = user_lifespan
+        self.is_sub_app = is_sub_app
 
         # 👇 设置默认值
         kwargs.setdefault('terms_of_service', _DEFAULT_TERMS_OF_SERVICE)
@@ -92,6 +93,10 @@ class Lumary(FastAPI):
             kwargs['redoc_url'] = None
             kwargs['swagger_ui_oauth2_redirect_url'] = None
 
+        # 👇 如果是子应用 → 使用子应用生命周期管理
+        if is_sub_app:
+            kwargs['lifespan'] = self._subapp_lifespan
+
         # 👇 调用父类初始化
         super().__init__(
             debug=debug,
@@ -102,27 +107,22 @@ class Lumary(FastAPI):
             **kwargs
         )
 
-        # 👇 设置异常处理
-        setup_exception_handlers(self)
-
-        # 👇 设置中间件
-        setup_middlewares(
-            self,
-            enable_cors=enable_cors,
-            allow_origins=allow_origins,
-            allow_methods=allow_methods,
-            allow_headers=allow_headers
-        )
-
         # 👇 设置自定义文档
         setup_custom_openapi(self)
 
-        # 👇 标记当前实例不是子应用
-        self.user_lifespan = user_lifespan
-        self.is_sub_app = False
-
-        # 👇 如果启用健康检查 → 注册健康检查接口
-        if enable_health_check:
+        # 👇 如果不是子应用
+        if not is_sub_app:
+            # 👇 设置异常处理
+            setup_exception_handlers(self)
+            # 👇 设置中间件
+            setup_middlewares(
+                self,
+                enable_cors=enable_cors,
+                allow_origins=allow_origins,
+                allow_methods=allow_methods,
+                allow_headers=allow_headers
+            )
+            # 👇 注册健康检查接口
             self._register_health_check()
 
     def _register_health_check(self) -> None:
@@ -162,8 +162,8 @@ class Lumary(FastAPI):
                 return sub_app
 
             logger.warning(f'The sub app {module_path}.{app_name} does not exist or is not the correct type')
-        except Exception as e:
-            logger.error(f'❌ Loading sub app module exception: {module_path}, exception info: {str(e)}')
+        except (ImportError, Exception):
+            logger.error(f'❌ Loading sub app module exception: {module_path}', exc_info=True)
 
         return None
 
@@ -179,9 +179,6 @@ class Lumary(FastAPI):
         if self.is_sub_app:
             raise FastAPIError('❌ To prevent continuing to mount subapps in subapps, use APIRouter!')
 
-        # 👇 标记子应用
-        app.is_sub_app = True
-        # 警告
         # 👇 清空子应用不允许的配置
         if app.root_path:
             logger.warning('The sub-app root_path has been automatically cleared')
@@ -229,3 +226,18 @@ class Lumary(FastAPI):
             # 👇 如果导入成功 → 挂载子应用
             if app is not None:
                 self.mount(mount_path, app, folder_name)
+
+    @staticmethod
+    async def _subapp_lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
+        """子应用生命周期管理
+
+        主要是为了禁止子应用独立运行，避免一些潜在的问题
+        Args:
+            _app: FastAPI实例对象
+
+        Returns:
+            异步生成器
+        """
+        raise RuntimeError("❌ 禁止直接运行子应用！")
+        # 仅用于满足 AsyncGenerator 返回类型，实际不会执行
+        yield  # type: ignore[unreachable]

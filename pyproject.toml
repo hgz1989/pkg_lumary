@@ -29,11 +29,22 @@ classifiers = [
 ]
 dependencies = [
     "fastapi>=0.136.0",
-    "sqlalchemy>=2.0.0",
-    "python-ulid>=3.1.0"
 ]
 
 [project.optional-dependencies]
+sqlalchemy = [
+    "sqlalchemy>=2.0.0",
+    "python-ulid>=3.0.0"
+]
+
+standard = [
+    "pydantic-settings>=2.14.0",
+    "uvicorn[standard]>=0.30.0",
+    "python-ulid>=3.1.0",
+    "sqlalchemy[asyncio]>=2.0.0"
+
+]
+
 dev = [
     "pytest>=8.0",
     "pytest-asyncio>=0.23",
@@ -41,8 +52,7 @@ dev = [
     "ruff>=0.4",
     "build>=1.2",
     "twine>=5.0",
-    "uvicorn[standard]>=0.30.0",
-    "asyncpg>=0.29.0",
+    "asyncpg>=0.29.0"
 ]
 
 [project.urls]
