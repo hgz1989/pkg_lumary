@@ -3,7 +3,6 @@
 @CreateDate : 2026/5/14
 @Description: 
 """
-from functools import lru_cache
 from typing import Mapping, Any
 from urllib.parse import urlparse
 
@@ -50,7 +49,6 @@ def _connect_args_from_url(url: str) -> dict:
     return {}
 
 
-@lru_cache(maxsize=8)
 def create_db_engine(
         url: str,
         *,

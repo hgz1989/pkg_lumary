@@ -4,9 +4,12 @@
 @Description: 
 """
 from contextlib import asynccontextmanager
-from typing import AsyncGenerator
+from typing import TypeVar, AsyncGenerator, Callable
 
+from fastapi import Depends
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
+
+T = TypeVar('T')
 
 
 class SessionFactory:
@@ -16,7 +19,7 @@ class SessionFactory:
         """初始化
 
         Args:
-            engine:数据库异步引擎对象
+            engine: 数据库异步引擎对象
         """
         self.engine = engine
         self.session_factory = async_sessionmaker(
@@ -25,6 +28,24 @@ class SessionFactory:
             expire_on_commit=False,
             autoflush=False
         )
+
+    def get_service(self, service_cls: type[T]) -> Callable[[], T]:
+        """生成服务依赖的工厂方法
+
+        Args:
+            service_cls: 服务类
+
+        Returns:
+            服务类实例
+        """
+
+        async def dependency() -> T:
+            async with self.get_session() as db:
+                return service_cls(db=db)
+
+        dependency.__name__ = f'{service_cls.__name__}Service'
+        dependency.__doc__ = f'自动注入 {service_cls.__name__}'
+        return dependency
 
     @asynccontextmanager
     async def get_session(self) -> AsyncGenerator[AsyncSession, None]:
@@ -39,12 +60,3 @@ class SessionFactory:
             except Exception:
                 await session.rollback()
                 raise
-
-    async def get_db(self) -> AsyncGenerator[AsyncSession, None]:
-        """FastAPI 依赖注入专用
-
-        Returns:
-            数据库异步会话对象
-        """
-        async with self.get_session() as session:
-            yield session

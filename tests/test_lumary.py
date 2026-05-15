@@ -9,7 +9,7 @@ from lumary import Lumary
 
 root_dir = Path(__file__).resolve().parent.parent
 
-app = Lumary(debug=True, root_path='/api', enable_health_check=True)
+app = Lumary(debug=True, root_path='/api')
 
 app.mount_sub_apps(root_dir / 'apps')
 

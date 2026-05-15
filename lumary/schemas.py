@@ -12,8 +12,8 @@ T = TypeVar('T')
 
 
 class BaseSchema(BaseModel):
-    """
-    全局所有 Pydantic Schema 基类
+    """全局所有 Pydantic Schema 基类
+
     统一配置、统一行为
     """
     model_config = ConfigDict(
@@ -35,23 +35,49 @@ class BaseSchema(BaseModel):
     @model_validator(mode='before')
     @classmethod
     def sort_id_first(cls, values: dict[str, Any]) -> dict[str, Any]:
-        """
+        """将 id 字段提到最前面
+
         最理想方案：在验证之前调整字典顺序
         不重建实例、不二次验证、不破坏内部、零副作用
+
+        Args:
+            values: 验证的字典数据
+
+        Returns:
+           调整顺序后的字典数据
         """
         if isinstance(values, dict) and 'id' in values:
             # 把 id 提到最前面，其余保持顺序
-            return {'id': values.pop('id'), **values}
+            return {
+                'id': values['id'],
+                **{key: val for key, val in values.items() if key != 'id'}
+            }
         return values
 
     # 🔥 核心：强制自动排除 None，保留空字符串
-    def model_dump(self, **kwargs):
+    def model_dump(self, **kwargs) -> dict[str, Any]:
+        """重写 model_dump 方法，强制自动排除 None，保留空字符串
+
+        Args:
+            **kwargs: 其他参数
+
+        Returns:
+            dict: 序列化后的字典数据
+        """
         kwargs['exclude_none'] = True
         return super().model_dump(**kwargs)
 
     # 🔥 兼容 FastAPI 自动序列化
-    def model_dump_json(self, **kwargs):
-        kwargs['exclude_none'] = True
+    def model_dump_json(self, **kwargs) -> str:
+        """重写 model_dump_json 方法，强制自动排除 None，保留空字符串
+
+        Args:
+            **kwargs: 其他参数
+
+        Returns:
+            str: 序列化后的 JSON 字符串数据
+        """
+        kwargs.setdefault('exclude_none', True)
         return super().model_dump_json(**kwargs)
 
 

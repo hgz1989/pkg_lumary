@@ -19,22 +19,22 @@ def setup_exception_handlers(app: FastAPI) -> None:
     """注册全局异常处理器
 
     将各类异常（业务异常、参数校验、数据库错误、框架内部 HTTP 错误及未知异常）
-    的拦截逻辑挂载到 FastAPI 应用实例上，实现统一响应格式和日志记录。
+    的拦截逻辑挂载到 FastAPI 应用实例上，实现统一响应格式和日志记录
 
     Args:
-        app (FastAPI): 当前运行的 FastAPI 应用实例
+        app: 当前运行的 FastAPI 应用实例
     """
 
     @app.exception_handler(BusinessException)
     async def business_exception_handler(_request: Request, exc: BusinessException) -> JSONResponse:
         """处理自定义业务异常
 
-        将 `BusinessException` 转换为 `JSONResponse` 返回给客户端。
-        业务错误属于正常逻辑流转，HTTP 状态码始终返回 200 OK。
+        将 `BusinessException` 转换为 `JSONResponse` 返回给客户端
+        业务错误属于正常逻辑流转，HTTP 状态码始终返回 200 OK
 
         Args:
-            _request (Request): 当前请求对象（未使用）
-            exc (BusinessException): 捕获到的业务异常实例
+            _request: 当前请求对象（未使用）
+            exc: 捕获到的业务异常实例
 
         Returns:
             包含错误码和错误信息的 JSON 响应
@@ -48,12 +48,12 @@ def setup_exception_handlers(app: FastAPI) -> None:
     async def validation_exception_handler(_request: Request, exc: RequestValidationError) -> JSONResponse:
         """处理 Pydantic 参数校验异常 (HTTP 422)
 
-        当请求体、路径参数或查询参数不符合 Pydantic 模型定义时触发。
-        自动提取第一个具体地校验错误信息并拼接，以对用户友好的形式返回。
+        当请求体、路径参数或查询参数不符合 Pydantic 模型定义时触发
+        自动提取第一个具体地校验错误信息并拼接，以对用户友好的形式返回
 
         Args:
-            _request (Request): 当前请求对象（未使用）
-            exc (RequestValidationError): Pydantic 抛出的校验异常实例
+            _request: 当前请求对象（未使用）
+            exc: Pydantic 抛出的校验异常实例
 
         Returns:
             HTTP 400 及格式化后的参数错误信息
@@ -78,12 +78,12 @@ def setup_exception_handlers(app: FastAPI) -> None:
     async def http_exception_handler(_request: Request, exc: HTTPException) -> JSONResponse:
         """处理 FastAPI 内置的 HTTP 异常
 
-        捕获框架自动抛出或通过 `raise HTTPException` 抛出的错误（如 401 鉴权失败、404 路由不存在）。
-        将其重新封装为符合项目规范的 JSON 结构。
+        捕获框架自动抛出或通过 `raise HTTPException` 抛出的错误（如 401 鉴权失败、404 路由不存在）
+        将其重新封装为符合项目规范的 JSON 结构
 
         Args:
-            _request (Request): 当前请求对象（未使用）
-            exc (HTTPException): FastAPI 抛出的 HTTP 异常实例
+            _request: 当前请求对象（未使用）
+            exc: FastAPI 抛出的 HTTP 异常实例
 
         Returns:
             继承原状态码及统一错误格式的 JSON 响应
@@ -96,12 +96,12 @@ def setup_exception_handlers(app: FastAPI) -> None:
     async def global_exception_handler(_request: Request, exc: Exception) -> JSONResponse:
         """处理未捕获的全局异常 (兜底方案)
 
-        拦截所有未被显式捕获的 Python 运行时错误（如空指针、索引越界、除零错误等）。
-        记录完整的异常堆栈日志，并向客户端返回 500 系统错误提示。
+        拦截所有未被显式捕获的 Python 运行时错误（如空指针、索引越界、除零错误等）
+        记录完整的异常堆栈日志，并向客户端返回 500 系统错误提示
 
         Args:
-            _request (Request): 当前请求对象（未使用）
-            exc (Exception): 未捕获的任意 Python 异常实例
+            _request: 当前请求对象（未使用）
+            exc: 未捕获的任意 Python 异常实例
 
         Returns:
             HTTP 500 及系统内部错误提示

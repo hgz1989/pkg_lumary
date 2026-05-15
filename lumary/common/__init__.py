@@ -4,10 +4,10 @@
 @Description: 
 """
 from .enums import BaseEnum
-from .logger import logger_name
-from .utils import auto_load_subapp_models
+from .logger import set_log_level, set_log_format
 
 __all__ = [
     'BaseEnum',
-    'auto_load_subapp_models'
+    'set_log_level',
+    'set_log_format'
 ]

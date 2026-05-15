@@ -4,7 +4,6 @@
 @Description: 
 """
 from logging import getLogger
-from typing import List
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -16,13 +15,13 @@ def setup_middlewares(
         app: FastAPI,
         *,
         enable_cors: bool,
-        allow_origins: List[str] | None = None,
-        allow_methods: List[str] | None = None,
-        allow_headers: List[str] | None = None,
+        allow_origins: list[str] | None = None,
+        allow_methods: list[str] | None = None,
+        allow_headers: list[str] | None = None,
 ) -> None:
     """注册全局中间件
 
-    将日志链路追踪、CORS 等中间件挂载到 FastAPI 实例。
+    将日志链路追踪、CORS 等中间件挂载到 FastAPI 实例
 
     Args:
         app: 当前运行的 FastAPI 应用实例

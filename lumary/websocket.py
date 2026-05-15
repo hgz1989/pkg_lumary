@@ -20,13 +20,13 @@ logger = getLogger(__name__)
 class WSConnectionManager:
     """WebSocket 连接管理器
 
-    管理所有活跃的 WebSocket 连接，支持按分组进行连接隔离和消息推送。
-    提供连接注册、注销、单播、广播、分组管理等能力。
+    管理所有活跃的 WebSocket 连接，支持按分组进行连接隔离和消息推送
+    提供连接注册、注销、单播、广播、分组管理等能力
 
     设计约束：
         本管理器面向单事件循环（即典型 FastAPI/uvicorn 部署模型），
         不需要 asyncio.Lock，因为协程之间不存在抢占式中断，
-        dict/set 的读写在 CPython 中本身是原子的。
+        dict/set 的读写在 CPython 中本身是原子的
 
     Examples:
         manager = WSConnectionManager()
@@ -92,8 +92,8 @@ class WSConnectionManager:
     async def disconnect(self, connection_id: str) -> None:
         """断开并移除指定连接
 
-        自动从所有分组中移除该连接，并关闭 WebSocket。
-        若连接已不存在或已关闭，则安全跳过。
+        自动从所有分组中移除该连接，并关闭 WebSocket
+        若连接已不存在或已关闭，则安全跳过
 
         Args:
             connection_id: 连接ID
@@ -114,8 +114,8 @@ class WSConnectionManager:
         # 👇 安全关闭连接
         try:
             await ws.close()
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning(f'Failed to close WebSocket: {connection_id},exception info: {str(e)}')
 
         logger.info(f'WebSocket disconnected: {connection_id}')
 
@@ -129,7 +129,7 @@ class WSConnectionManager:
     ) -> AsyncGenerator[str, None]:
         """上下文管理器方式管理连接生命周期
 
-        自动处理连接的注册与注销，确保即使发生异常也能正确清理资源。
+        自动处理连接的注册与注销，确保即使发生异常也能正确清理资源
 
         Args:
             websocket: FastAPI WebSocket 实例
@@ -172,7 +172,7 @@ class WSConnectionManager:
     def leave_group(self, connection_id: str, group: str) -> None:
         """将连接从指定分组中移除
 
-        不会断开连接，仅退出分组。若分组清空则自动清理。
+        不会断开连接，仅退出分组。若分组清空则自动清理
 
         Args:
             connection_id: 连接ID

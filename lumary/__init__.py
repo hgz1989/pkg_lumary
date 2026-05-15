@@ -3,9 +3,9 @@
 @CreateDate : 2026/5/14
 @Description: 
 """
-from .common.enums import BaseEnum
 from .application import Lumary
-from .lifespan import on_startup, on_shutdown
+from .common.enums import BaseEnum
+from .lifespan import HookRegistry, on_startup, on_shutdown, clear_hooks
 from .exceptions import BusinessException
 from .schemas import (
     BaseSchema,
@@ -20,13 +20,15 @@ from .websocket import WSConnectionManager
 __version__ = '0.1.0'
 
 __all__ = [
-    # 枚举基类
-    'BaseEnum',
     # 核心
     'Lumary',
+    # 枚举基类
+    'BaseEnum',
     # 生命周期
+    'HookRegistry',
     'on_startup',
     'on_shutdown',
+    'clear_hooks',
     # 异常
     'BusinessException',
     # Schema

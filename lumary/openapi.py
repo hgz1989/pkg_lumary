@@ -44,7 +44,7 @@ def setup_custom_openapi(app: FastAPI) -> None:
         components = openapi_schema.setdefault('components', {})
         schemas = components.setdefault('schemas', {})
 
-        # 删掉你截图里的那两个 schema
+        # 删掉 ValidationError 和 HTTPValidationError
         schemas.pop('ValidationError', None)
         schemas.pop('HTTPValidationError', None)
 

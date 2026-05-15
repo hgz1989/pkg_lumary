@@ -17,7 +17,9 @@ class BaseEnum(Enum):
         Returns:
             枚举值
         """
-        return self.value[0]
+        if isinstance(self.value, (list, tuple)):
+            return self.value[0]
+        return self.value
 
     @property
     def label(self) -> str:
@@ -26,4 +28,6 @@ class BaseEnum(Enum):
         Returns:
             枚举描述标签
         """
-        return self.value[1]  # 取描述
+        if isinstance(self.value, (list, tuple)) and len(self.value) >= 2:
+            return self.value[1]
+        return self.name

@@ -41,6 +41,3 @@ htmlcov/
 # OS
 .DS_Store
 Thumbs.db
-
-# Project specific
-apps/

@@ -3,7 +3,7 @@
 @CreateDate : 2026/5/14
 @Description: 
 """
-from typing import Any, Dict, Generic, Sequence, Type, TypeVar
+from typing import Any, Generic, Sequence, TypeVar
 
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -20,9 +20,9 @@ class CRUDBase(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
     """CRUD 泛型基类
 
     提供标准创建、读取、更新、删除操作(仅支持异步)
-    子类必须在类级别显式定义 model 属性。
+    子类必须在类级别显式定义 model 属性
     """
-    model: Type[ModelType]
+    model: type[ModelType]
 
     def __init__(self, db: AsyncSession):
         """初始化 CRUD 对象
@@ -71,7 +71,7 @@ class CRUDBase(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
             stmt = stmt.filter_by(**kwargs)
 
         if hasattr(self.model, 'is_deleted'):
-            stmt = stmt.where(getattr(self.model, 'is_deleted') == False)
+            stmt = stmt.where(getattr(self.model, 'is_deleted').is_(False))
 
         result = await self.db.execute(stmt)
         return result.scalar_one_or_none()
@@ -99,7 +99,7 @@ class CRUDBase(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
         stmt = select(self.model)
 
         if hasattr(self.model, 'is_deleted'):
-            stmt = stmt.where(getattr(self.model, 'is_deleted') == False)
+            stmt = stmt.where(getattr(self.model, 'is_deleted').is_(False))
 
         if criteria:
             stmt = stmt.where(*criteria)
@@ -133,12 +133,15 @@ class CRUDBase(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
         stmt = select(func.count()).select_from(self.model)
 
         if hasattr(self.model, 'is_deleted'):
-            stmt = stmt.where(getattr(self.model, 'is_deleted') == False)
+            stmt = stmt.where(getattr(self.model, 'is_deleted').is_(False))
 
         if criteria:
             stmt = stmt.where(*criteria)
 
         if kwargs:
+            invalid_keys = set(kwargs.keys()) - self.valid_columns
+            if invalid_keys:
+                raise ValueError(f'无效的查询字段: {",".join(invalid_keys)}')
             stmt = stmt.filter_by(**kwargs)
 
         result = await self.db.execute(stmt)
@@ -154,6 +157,11 @@ class CRUDBase(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
             创建成功的模型实例
         """
         obj_in_data = obj_in.model_dump(exclude_unset=True)
+
+        invalid_keys = set(obj_in_data.keys()) - self.valid_columns
+        if invalid_keys:
+            raise ValueError(f'无效的创建字段: {",".join(invalid_keys)}')
+
         db_obj = self.model(**obj_in_data)
         self.db.add(db_obj)
         await self.db.flush()
@@ -164,7 +172,7 @@ class CRUDBase(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
             self,
             *,
             db_obj: ModelType,
-            obj_in: UpdateSchemaType | Dict[str, Any]
+            obj_in: UpdateSchemaType | dict[str, Any]
     ) -> ModelType:
         """更新记录
 
@@ -180,6 +188,10 @@ class CRUDBase(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
         else:
             update_data = obj_in.model_dump(exclude_unset=True)
 
+        invalid_keys = set(update_data.keys()) - self.valid_columns
+        if invalid_keys:
+            raise ValueError(f'无效的更新字段: {",".join(invalid_keys)}')
+
         for field, value in update_data.items():
             setattr(db_obj, field, value)
 
@@ -187,7 +199,7 @@ class CRUDBase(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
         await self.db.refresh(db_obj)
         return db_obj
 
-    async def remove(self, *, db_obj: ModelType = None, obj_id: Any = None) -> ModelType | None:
+    async def remove(self, *, db_obj: ModelType | None = None, obj_id: Any = None) -> ModelType | None:
         """物理删除记录
 
         Args:
