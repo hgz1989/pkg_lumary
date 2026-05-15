@@ -81,7 +81,7 @@ class Lumary(FastAPI):
         """
         # 👇 设置属性
         self.is_sub_app = is_sub_app
-        self._hook_registry = hook_registry if hook_registry is not None else _default_registry
+        self._hook_registry = hook_registry if (hook_registry is not None) else _default_registry
 
         # 👇 如果是子应用
         if self.is_sub_app:
