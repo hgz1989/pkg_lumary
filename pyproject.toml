@@ -42,7 +42,6 @@ standard = [
     "uvicorn[standard]>=0.30.0",
     "python-ulid>=3.1.0",
     "sqlalchemy[asyncio]>=2.0.0"
-
 ]
 
 dev = [
