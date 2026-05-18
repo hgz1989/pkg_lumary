@@ -54,7 +54,7 @@ class Lumary(FastAPI):
             title: str = 'Lumary',
             summary: str = '',
             description: str = '',
-            version: str = '0.1.1',
+            version: str = '0.1.2',
             is_sub_app: bool = False,
             enable_cors: bool = True,
             allow_origins: list[str] | None = None,

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "lumary"
-version = "0.1.1"
+version = "0.1.2"
 description = "基于 FastAPI 封装的生产级 Web 应用框架"
 readme = "README.md"
 license = { text = "MIT" }

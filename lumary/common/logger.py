@@ -4,6 +4,9 @@
 @Description:
 """
 import logging
+import sys
+from pathlib import Path
+from logging.handlers import TimedRotatingFileHandler
 
 # ===============================
 # 日志格式定义
@@ -72,3 +75,79 @@ def set_log_format(log_format: str) -> None:
     # 给根日志下的所有处理器重新设置格式
     for handler in root_logger.handlers:
         handler.setFormatter(formatter)
+
+
+# ===============================
+# ✅ 方法3：配置应用日志
+# ===============================
+def setup_logger(
+    log_dir: str | Path | None = None,
+    filename: str = 'app.log',
+    when: str = 'midnight',
+    backup_count: int = 30,
+    encoding: str = 'utf-8',
+    enable_console: bool = True
+) -> None:
+    """一键配置应用的日志（支持控制台开关与文件日志）
+
+    Args:
+        log_dir: 日志保存目录。若不提供，则不开启文件日志。
+        filename: 日志文件名。
+        when: 轮转周期 (如 'midnight' 每天半夜轮转, 'H' 每小时)。
+        backup_count: 保留的日志文件数量。
+        encoding: 文件编码。
+        enable_console: 是否在控制台输出日志。
+    """
+    root_logger = logging.getLogger()
+
+    # 1. 尝试获取现有的 formatter
+    current_formatter = None
+    for h in root_logger.handlers:
+        if h.formatter:
+            current_formatter = h.formatter
+            break
+    if not current_formatter:
+        current_formatter = logging.Formatter(NORMAL_FORMAT)
+
+    # 2. 控制台输出处理
+    if enable_console:
+        # 检查是否已有非文件的 StreamHandler
+        has_console = any(
+            isinstance(h, logging.StreamHandler) and not isinstance(h, logging.FileHandler)
+            for h in root_logger.handlers
+        )
+        if not has_console:
+            console_handler = logging.StreamHandler(sys.stdout)
+            console_handler.setFormatter(current_formatter)
+            root_logger.addHandler(console_handler)
+    else:
+        # 移除所有非文件的 StreamHandler
+        handlers_to_remove = [
+            h for h in root_logger.handlers
+            if isinstance(h, logging.StreamHandler) and not isinstance(h, logging.FileHandler)
+        ]
+        for h in handlers_to_remove:
+            root_logger.removeHandler(h)
+
+    # 3. 文件输出处理
+    if log_dir:
+        log_dir = Path(log_dir)
+        log_dir.mkdir(parents=True, exist_ok=True)
+        file_path = log_dir / filename
+
+        # 检查是否已有相同路径的 FileHandler
+        has_file_handler = any(
+            isinstance(h, logging.FileHandler) and getattr(h, 'baseFilename', '') == str(file_path.absolute())
+            for h in root_logger.handlers
+        )
+        
+        if not has_file_handler:
+            file_handler = TimedRotatingFileHandler(
+                filename=str(file_path),
+                when=when,
+                interval=1,
+                backupCount=backup_count,
+                encoding=encoding
+            )
+            file_handler.setFormatter(current_formatter)
+            root_logger.addHandler(file_handler)
