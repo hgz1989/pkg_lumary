@@ -41,7 +41,12 @@ from pydantic import (
 )
 
 from .application import Lumary
-from .lifespan import HookRegistry, on_startup, on_shutdown, clear_hooks
+from .lifespan import (
+    HookRegistry,
+    on_startup,
+    on_shutdown,
+    clear_hooks
+)
 from .exceptions import BusinessException
 from .schemas import (
     BaseSchema,
@@ -53,7 +58,7 @@ from .schemas import (
 )
 from .websocket import WSConnectionManager
 
-__version__ = '0.1.2'
+__version__ = '0.1.3'
 
 __all__ = [
     # 核心
@@ -86,7 +91,6 @@ __all__ = [
     'RedirectResponse',
     'FileResponse',
     'jsonable_encoder',
-    'CORSMiddleware',
 
     # Pydantic 常用对象
     'BaseModel',
