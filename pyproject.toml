@@ -38,10 +38,10 @@ sqlalchemy = [
 ]
 
 standard = [
+    "fastapi-cli>=0.0.24",
     "sqlalchemy[asyncio]>=2.0.0",
     "python-ulid>=3.1.0",
-    "pydantic-settings>=2.14.0",
-    "uvicorn[standard]>=0.30.0"
+    "pydantic-settings>=2.14.0"
 ]
 
 [project.urls]
