@@ -33,7 +33,7 @@ dependencies = [
 
 [project.optional-dependencies]
 sqlalchemy = [
-    "sqlalchemy>=2.0.0",
+    "sqlalchemy[asyncio]>=2.0.0",
     "python-ulid>=3.0.0"
 ]
 

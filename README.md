@@ -19,10 +19,10 @@
 # 最小安装（仅核心，无数据库依赖）
 pip install lumary
 
-# 仅 SQLAlchemy 支持
+# 仅 SQLAlchemy[asyncio] 支持
 pip install lumary[sqlalchemy]
 
-# 标准安装（含 SQLAlchemy + Uvicorn + pydantic-settings）
+# 标准安装（含 fastapi-cli + SQLAlchemy[asyncio] + pydantic-settings）
 pip install lumary[standard]
 ```
 
@@ -101,26 +101,6 @@ async def transfer(from_id: int, to_id: int, amount: float):
 | `lumary.common.enums` | 枚举基类 `BaseEnum` |
 | `lumary.common.mixins` | SQLAlchemy 混入类 |
 | `lumary.db` | 数据库工具 |
-
-## 开发
-
-```bash
-# 克隆仓库
-git clone https://github.com/zarkhan/lumary.git
-cd lumary
-
-# 创建虚拟环境 & 安装开发依赖
-python -m venv .venv
-.venv\Scripts\activate       # Windows
-source .venv/bin/activate    # macOS / Linux
-pip install -e ".[dev]"
-
-# 代码检查
-ruff check lumary/
-
-# 运行测试
-pytest
-```
 
 ## License
 
