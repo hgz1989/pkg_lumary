@@ -17,7 +17,7 @@ from .handlers import setup_exception_handlers
 from .lifespan import fastapi_lifespan, HookRegistry, _default_registry
 from .middleware import setup_middlewares
 from .openapi import setup_custom_openapi
-from .schemas import APIResponse, SystemHealthInfo, response_success
+from .schemas import APIResponse, SystemHealthOut, response_success
 
 logger = getLogger(__name__)
 
@@ -142,13 +142,13 @@ class Lumary(FastAPI):
         """注册健康检查接口"""
 
         @self.get('/health', tags=['system'], summary='服务健康检查')
-        async def health(_request: Request) -> APIResponse[SystemHealthInfo]:
+        async def health(_request: Request) -> APIResponse[SystemHealthOut]:
             """服务健康检查
 
             Returns:
                 响应数据
             """
-            data = SystemHealthInfo(
+            data = SystemHealthOut(
                 name=self.title,
                 version=self.version,
                 debug=self.debug

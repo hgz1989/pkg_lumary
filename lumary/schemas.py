@@ -81,14 +81,7 @@ class SchemaBase(BaseModel):
         return super().model_dump_json(**kwargs)
 
 
-class APIResponse(BaseSchema, Generic[T]):
-    """全局统一的 API 响应模型"""
-    code: int = Field(default=200, description='业务状态码')
-    message: str = Field(default='Success', description='提示信息')
-    data: T | None = Field(default=None, description='响应数据')
-
-
-class PageData(BaseSchema, Generic[T]):
+class PageData(SchemaBase, Generic[T]):
     """通用分页响应数据（全量信息）"""
     page: int = Field(default=1, description='当前页码')
     size: int = Field(default=10, description='每页数量')
@@ -97,18 +90,25 @@ class PageData(BaseSchema, Generic[T]):
     items: list[T] = Field(default_factory=list, description='当前页数据列表')
 
 
-class SystemHealthInfo(BaseSchema):
-    """系统健康检查信息"""
+class PageQuery(SchemaBase):
+    """通用分页请求参数（适用于后台管理系统）"""
+    page: int = Field(default=1, description='当前页码', ge=1)
+    size: int = Field(default=10, description='每页数量', ge=1, le=1000)
+
+
+class APIResponse(SchemaBase, Generic[T]):
+    """全局统一的 API 响应模型"""
+    code: int = Field(default=200, description='业务状态码')
+    message: str = Field(default='Success', description='提示信息')
+    data: T | None = Field(default=None, description='响应数据')
+
+
+class SystemHealthOut(SchemaBase):
+    """系统健康检查输出"""
     status: str = Field(default='ok', description='系统状态')
     name: str = Field(default='lumary', description='系统名称')
     version: str = Field(default='1.0.0', description='系统版本')
     debug: bool = Field(default=False, description='是否处于调试模式')
-
-
-class PageQuery(BaseSchema):
-    """通用分页请求参数（适用于后台管理系统）"""
-    page: int = Field(default=1, description='当前页码', ge=1)
-    size: int = Field(default=10, description='每页数量', ge=1, le=1000)
 
 
 def response_success(data: T | None = None, message: str = 'Success') -> APIResponse[T]:
