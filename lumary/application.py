@@ -225,7 +225,7 @@ class Lumary(FastAPI):
             # 👇 构建模块路径和变量名
             module_path = f'{apps_folder_name}.{app_folder_name}'
             app_var_name = f'{app_folder_name}_app'
-            mount_path = f'/{app_folder_name}'
+            mount_path = f'/{app_folder_name.replace("_", "-")}'
 
             # 👇 动态导入子应用
             app = self._load_sub_app(module_path, app_var_name)
