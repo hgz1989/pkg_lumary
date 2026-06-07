@@ -11,7 +11,7 @@ from pydantic import BaseModel, ConfigDict, model_validator, Field
 T = TypeVar('T')
 
 
-class BaseSchema(BaseModel):
+class SchemaBase(BaseModel):
     """全局所有 Pydantic Schema 基类
 
     统一配置、统一行为

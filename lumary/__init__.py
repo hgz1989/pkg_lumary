@@ -49,7 +49,7 @@ from .lifespan import (
 )
 from .exceptions import BusinessException
 from .schemas import (
-    BaseSchema,
+    SchemaBase,
     APIResponse,
     PageData,
     PageQuery,
@@ -110,7 +110,7 @@ __all__ = [
     'BusinessException',
 
     # Schema
-    'BaseSchema',
+    'SchemaBase',
     'APIResponse',
     'PageQuery',
     'PageData',
