@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "lumary"
-version = "0.1.5"
+version = "0.1.6"
 description = "基于 FastAPI 封装的生产级 Web 应用框架"
 readme = "README.md"
 license = { text = "MIT" }
@@ -38,7 +38,6 @@ sqlalchemy = [
 ]
 
 standard = [
-    "fastapi-cli>=0.0.24",
     "sqlalchemy[asyncio]>=2.0.0",
     "python-ulid>=3.1.0",
     "pydantic-settings>=2.14.0"

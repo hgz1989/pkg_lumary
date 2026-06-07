@@ -22,7 +22,7 @@ pip install lumary
 # 仅 SQLAlchemy[asyncio] 支持
 pip install lumary[sqlalchemy]
 
-# 标准安装（含 fastapi-cli + SQLAlchemy[asyncio] + pydantic-settings）
+# 标准安装（含 SQLAlchemy[asyncio] + pydantic-settings）
 pip install lumary[standard]
 ```
 
