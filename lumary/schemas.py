@@ -4,7 +4,7 @@
 @Description: 
 """
 from datetime import datetime
-from typing import TypeVar, Any, Generic
+from typing import TypeVar, Any, Generic, Sequence
 
 from pydantic import BaseModel, ConfigDict, model_validator, Field
 
@@ -87,7 +87,7 @@ class PageData(SchemaBase, Generic[T]):
     size: int = Field(default=10, description='每页数量')
     total: int = Field(default=0, description='总记录数')
     pages: int = Field(default=0, description='总页数')
-    items: list[T] = Field(default_factory=list, description='当前页数据列表')
+    items: Sequence[T] | list[T] = Field(default_factory=list, description='当前页数据列表')
 
 
 class PageQuery(SchemaBase):
