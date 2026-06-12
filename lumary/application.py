@@ -175,8 +175,8 @@ class Lumary(FastAPI):
                 return sub_app
 
             logger.warning(f'⚠️ The sub app {module_path}.{app_name} does not exist or is not the correct type')
-        except ImportError:
-            logger.warning(f'⚠️ Could not import module: {module_path}')
+        except Exception as e:
+            logger.warning(f'⚠️ Could not import module: {module_path}, reason: {e}')
 
         return None
 
@@ -196,7 +196,7 @@ class Lumary(FastAPI):
         super().mount(path, app, name)
         logger.info(f'🚀 The sub-app is mounted: {path} -> {app.title}')
 
-    def mount_sub_apps(self, apps_path: str | Path) -> None:
+    def mount_sub_apps(self, apps_path: str | Path = './apps') -> None:
         """挂载子应用
 
         Args:

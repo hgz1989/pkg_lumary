@@ -47,7 +47,13 @@ from .lifespan import (
     on_shutdown,
     clear_hooks
 )
-from .exceptions import BusinessException
+from .exceptions import (
+    BusinessException,
+    UnauthorizedError,
+    ForbiddenError,
+    NotFoundError,
+    ConflictError
+)
 from .schemas import (
     SchemaBase,
     PageData,
@@ -56,6 +62,7 @@ from .schemas import (
     response_success,
     response_fail
 )
+from .services import BaseService
 from .websocket import WSConnectionManager
 
 __version__ = '0.1.6'
@@ -108,6 +115,10 @@ __all__ = [
 
     # 异常
     'BusinessException',
+    'UnauthorizedError',
+    'ForbiddenError',
+    'NotFoundError',
+    'ConflictError',
 
     # Schema
     'SchemaBase',
@@ -118,6 +129,9 @@ __all__ = [
     'response_success',
     'response_fail',
 
+    # 路由与服务
+    'CRUDRouter',
+    'BaseService',
     # WebSocket连接管理器
     'WSConnectionManager'
 ]

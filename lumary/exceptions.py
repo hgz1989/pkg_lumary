@@ -24,3 +24,31 @@ class BusinessException(Exception):
         self.code = code
         self.message = message
         self.data = data
+
+
+class UnauthorizedError(BusinessException):
+    """未授权异常 (401)"""
+
+    def __init__(self, message: str = '未授权访问', data: Any = None):
+        super().__init__(code=401, message=message, data=data)
+
+
+class ForbiddenError(BusinessException):
+    """拒绝访问异常 (403)"""
+
+    def __init__(self, message: str = '拒绝访问', data: Any = None):
+        super().__init__(code=403, message=message, data=data)
+
+
+class NotFoundError(BusinessException):
+    """资源不存在异常 (404)"""
+
+    def __init__(self, message: str = '资源不存在', data: Any = None):
+        super().__init__(code=404, message=message, data=data)
+
+
+class ConflictError(BusinessException):
+    """资源冲突异常 (409)"""
+
+    def __init__(self, message: str = '资源冲突', data: Any = None):
+        super().__init__(code=409, message=message, data=data)
