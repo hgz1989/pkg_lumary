@@ -6,12 +6,13 @@
 from typing import Any, Generic, Sequence, TypeVar
 
 from pydantic import BaseModel
+from sqlalchemy import inspect as sa_inspect, Select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql import func, select
 
 from .model import ModelBase
 
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import IntegrityError, NoResultFound
 
 ModelType = TypeVar('ModelType', bound=ModelBase)
 CreateSchemaType = TypeVar('CreateSchemaType', bound=BaseModel)
@@ -37,9 +38,11 @@ class CRUDBase(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
         if not hasattr(self, 'model') or self.model is None:
             raise ValueError(f'{self.__class__.__name__} 必须显式定义 model 属性')
 
-        self.valid_columns = set(self.model.__table__.columns.keys())
+        # 使用 inspect 获取映射列，兼容性更好，同时缓存避免重复计算
+        mapper = sa_inspect(self.model)
+        self.valid_columns = {col.key for col in mapper.mapper.column_attrs}
 
-    def _apply_soft_delete_filter(self, stmt: Any) -> Any:
+    def _apply_soft_delete_filter(self, stmt: Select) -> Select:
         """为查询语句添加软删除过滤条件
 
         如果模型支持软删除，则自动过滤已删除的记录
@@ -52,9 +55,10 @@ class CRUDBase(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
         """
         if hasattr(self.model, 'is_deleted'):
             stmt = stmt.where(getattr(self.model, 'is_deleted').is_(False))
+
         return stmt
 
-    def _apply_kwargs_filter(self, stmt: Any, kwargs: dict[str, Any]) -> Any:
+    def _apply_kwargs_filter(self, stmt: Select, kwargs: dict[str, Any]) -> Select:
         """为查询语句添加 kwargs 精确匹配过滤条件
 
         会校验 kwargs 中的字段是否为模型有效列，无效字段将抛出 ValueError
@@ -71,9 +75,10 @@ class CRUDBase(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
             if invalid_keys:
                 raise ValueError(f'无效的查询字段: {",".join(invalid_keys)}')
             stmt = stmt.filter_by(**kwargs)
+
         return stmt
 
-    async def get(self, obj_id: Any, options: list | None = None) -> ModelType | None:
+    async def get(self, obj_id: Any, options: list | None = None, **kwargs: Any) -> ModelType:
         """根据主键获取单条记录
 
         Args:
@@ -83,17 +88,21 @@ class CRUDBase(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
         Returns:
             查询到的模型实例或为空
         """
-        db_obj = await self.db.get(self.model, obj_id, options=options)
+        db_obj = await self.db.get(self.model, obj_id, options=options, **kwargs)
 
-        if db_obj and hasattr(db_obj, 'is_deleted') and db_obj.is_deleted:
-            return None
+        if not db_obj:
+            raise NoResultFound(f'{self.model.__name__}记录不存在: id={obj_id}')
+
+        if hasattr(db_obj, 'is_deleted') and db_obj.is_deleted:
+            raise NoResultFound(f'{self.model.__name__}记录已被删除: id={obj_id}')
 
         return db_obj
 
-    async def get_one(self, **kwargs: Any) -> ModelType | None:
+    async def get_one(self, *, options: list | None = None, **kwargs: Any) -> ModelType | None:
         """根据多个字段条件获取单条记录（AND 关系）
 
         Args:
+            options: SQLAlchemy 加载策略列表，用于外键关联查询
             **kwargs: 字段名和值的键值对
 
         Returns:
@@ -102,14 +111,18 @@ class CRUDBase(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
         stmt = select(self.model)
         stmt = self._apply_soft_delete_filter(stmt)
         stmt = self._apply_kwargs_filter(stmt, kwargs)
+        if options:
+            stmt = stmt.options(*options)
 
         result = await self.db.execute(stmt)
         return result.scalar_one_or_none()
-    async def get_count(self, *criteria: Any, **kwargs: Any) -> int:
+
+    async def get_count(self, *criteria: Any, options: list | None = None, **kwargs: Any) -> int:
         """统计记录总数
 
         Args:
             *criteria: SQLAlchemy 查询条件
+            options: SQLAlchemy 加载策略列表，用于外键关联查询
             **kwargs: 精确匹配的过滤条件
 
         Returns:
@@ -122,15 +135,19 @@ class CRUDBase(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
             stmt = stmt.where(*criteria)
 
         stmt = self._apply_kwargs_filter(stmt, kwargs)
+        if options:
+            stmt = stmt.options(*options)
 
         result = await self.db.execute(stmt)
         return result.scalar_one()
+
     async def get_multi(
             self,
             *criteria: Any,
             skip: int = 0,
             limit: int = 100,
             order_by: Any | Sequence[Any] | None = None,
+            options: list | None = None,
             **kwargs: Any
     ) -> Sequence[ModelType]:
         """获取多条记录支持分页、条件过滤和排序
@@ -140,6 +157,7 @@ class CRUDBase(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
             skip: 跳过的记录数量
             limit: 返回的最大记录数量
             order_by: 排序字段或字段列表 (如 model.id.desc())
+            options: SQLAlchemy 加载策略列表，用于外键关联查询
             **kwargs: 精确匹配的过滤条件 (如 status=1)
 
         Returns:
@@ -159,11 +177,31 @@ class CRUDBase(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
             else:
                 stmt = stmt.order_by(order_by)
 
+        if options:
+            stmt = stmt.options(*options)
+
         stmt = stmt.offset(skip).limit(limit)
         result = await self.db.execute(stmt)
         return result.scalars().all()
 
+    async def create(self, *, obj_in: CreateSchemaType) -> ModelType:
+        """创建新记录
 
+        Args:
+            obj_in: 创建记录的 Pydantic 模型
+
+        Returns:
+            创建成功的模型实例
+        """
+        obj_in_data = {
+            k: v for k, v in obj_in.model_dump(exclude_unset=True).items()
+            if k in self.valid_columns
+        }
+
+        db_obj = self.model(**obj_in_data)
+        self.db.add(db_obj)
+        await self.db.flush()
+        return db_obj
 
     async def batch_create(
             self,
@@ -186,12 +224,15 @@ class CRUDBase(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
         Returns:
             成功创建的模型实例列表
         """
-        db_objs = []
-
         # 场景 1：要求全部成功，且需要返回对象
         if not ignore_errors:
+            db_objs = []
+
             for obj_in in objs_in:
-                obj_data = obj_in.model_dump() if hasattr(obj_in, "model_dump") else obj_in
+                if isinstance(obj_in, dict):
+                    obj_data = obj_in
+                else:
+                    obj_data = obj_in.model_dump()
                 obj_data = {k: v for k, v in obj_data.items() if k in self.valid_columns}
                 db_obj = self.model(**obj_data)
                 db_objs.append(db_obj)
@@ -199,13 +240,17 @@ class CRUDBase(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
             self.db.add_all(db_objs)
             if return_objs:
                 await self.db.flush()
+
             return db_objs
 
         # 场景 2：忽略错误记录（如某条数据冲突不影响其他数据入库）
         # 这种模式下只能逐条 add + flush 并捕获异常，因为 add_all 会导致整个 flush 失败
         successful_objs = []
         for obj_in in objs_in:
-            obj_data = obj_in.model_dump() if hasattr(obj_in, "model_dump") else obj_in
+            if isinstance(obj_in, dict):
+                obj_data = obj_in
+            else:
+                obj_data = obj_in.model_dump()
             obj_data = {k: v for k, v in obj_data.items() if k in self.valid_columns}
             db_obj = self.model(**obj_data)
             self.db.add(db_obj)
@@ -219,26 +264,6 @@ class CRUDBase(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
                 pass
 
         return successful_objs
-
-    async def create(self, *, obj_in: CreateSchemaType) -> ModelType:
-        """创建新记录
-
-        Args:
-            obj_in: 创建记录的 Pydantic 模型
-
-        Returns:
-            创建成功的模型实例
-        """
-        obj_in_data = {
-            k: v for k, v in obj_in.model_dump(exclude_unset=True).items()
-            if k in self.valid_columns
-        }
-
-        db_obj = self.model(**obj_in_data)
-        self.db.add(db_obj)
-        await self.db.flush()
-        await self.db.refresh(db_obj)
-        return db_obj
 
     async def update(
             self,
@@ -269,10 +294,47 @@ class CRUDBase(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
             setattr(db_obj, field, value)
 
         await self.db.flush()
-        await self.db.refresh(db_obj)
         return db_obj
 
-    async def remove(self, *, db_obj: ModelType | None = None, obj_id: Any = None) -> ModelType | None:
+    async def soft_delete(self, *, obj_id: Any) -> ModelType:
+        """软删除记录
+
+        Args:
+            obj_id: 记录主键
+
+        Returns:
+            返回被删除的实例
+        """
+        if not hasattr(self.model, 'is_deleted'):
+            raise NotImplementedError('模型不支持软删除')
+
+        db_obj = await self.get(obj_id)
+        db_obj.is_deleted = True
+        db_obj.deleted_at = func.now()
+        await self.db.flush()
+        self.db.expunge(db_obj)
+        return db_obj
+
+    async def restore(self, *, obj_id: Any) -> ModelType:
+        """恢复软删除的记录
+
+        Args:
+            obj_id: 记录主键
+
+        Returns:
+            返回被恢复的实例
+        """
+        if not hasattr(self.model, 'is_deleted'):
+            raise NotImplementedError('模型不支持软删除')
+
+        db_obj = await self.get(obj_id)
+        db_obj.is_deleted = True
+        db_obj.deleted_at = func.now()
+        await self.db.flush()
+        self.db.expunge(db_obj)
+        return db_obj
+
+    async def remove(self, *, db_obj: ModelType | None = None, obj_id: Any = None) -> ModelType:
         """物理删除记录
 
         Args:
@@ -280,65 +342,63 @@ class CRUDBase(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
             obj_id: 记录主键（obj 不存在时使用）
 
         Returns:
-            被删除的模型实例或为空
+            被删除的模型实例
         """
+        # 第一步：参数合法性校验
+        if db_obj is None and obj_id is None:
+            raise ValueError('必须传入db_obj或obj_id中的至少一个')
+
         # 如果已经传入 obj，直接使用，不再查库
         if not db_obj:
             db_obj = await self.get(obj_id)
 
+            # 如果对象不存在，直接抛出明确异常
+            if db_obj is None:
+                raise NoResultFound(f'{self.model.__name__}记录不存在: id={obj_id}')
+
         if db_obj:
             await self.db.delete(db_obj)
-            await self.db.flush()
+
         return db_obj
 
-    async def soft_delete(self, *, obj_id: Any, return_obj: bool = False) -> ModelType | None | bool:
-        """软删除记录
+    async def execute_stmt(
+            self,
+            *,
+            stmt: Any,
+            options: list | None = None
+    ) -> Any:
+        """执行外部传入的 SQLAlchemy 语句
+
+        支持 Select / Insert / Update / Delete 等任意可执行语句，
+        调用方自行处理返回结果（scalars / fetchone / fetchall 等）
 
         Args:
-            obj_id: 记录主键
-            return_obj: 是否返回被软删除的模型实例
+            stmt: SQLAlchemy 可执行语句
+            options: SQLAlchemy 加载策略列表，用于外键关联查询
 
         Returns:
-            return_obj=True 时返回被删除的实例，否则返回 True/False
+            语句执行结果
         """
-        if not hasattr(self.model, 'is_deleted'):
-            raise NotImplementedError('模型不支持软删除')
+        if options:
+            stmt = stmt.options(*options)
 
-        db_obj = await self.get(obj_id)
-        if not db_obj:
-            return None if return_obj else False
+        return await self.db.execute(stmt)
 
-        setattr(db_obj, 'is_deleted', True)
-        setattr(db_obj, 'deleted_at', func.now())
-        await self.db.flush()
-        
-        if return_obj:
-            await self.db.refresh(db_obj)
-            return db_obj
-        return True
+    async def execute_sql(
+            self,
+            *,
+            sql: str,
+            params: dict[str, Any] | None = None
+    ) -> Any:
+        """执行原始 SQL 语句
 
-    async def restore(self, *, obj_id: Any, return_obj: bool = False) -> ModelType | None | bool:
-        """恢复软删除的记录
+        调用方自行处理返回结果（scalars / fetchone / fetchall 等）
 
         Args:
-            obj_id: 记录主键
-            return_obj: 是否返回被恢复的模型实例
+            sql: 原始 SQL 语句文本
+            params: SQL 参数绑定
 
         Returns:
-            return_obj=True 时返回被恢复的实例，否则返回 True/False
+            SQL 执行结果
         """
-        if not hasattr(self.model, 'is_deleted'):
-            raise NotImplementedError('模型不支持软删除')
-
-        db_obj = await self.db.get(self.model, obj_id)
-        if not db_obj or not db_obj.is_deleted:
-            return None if return_obj else False
-
-        setattr(db_obj, 'is_deleted', False)
-        setattr(db_obj, 'deleted_at', None)
-        await self.db.flush()
-        
-        if return_obj:
-            await self.db.refresh(db_obj)
-            return db_obj
-        return True
+        return await self.db.execute(text(sql), params or {})

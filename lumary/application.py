@@ -9,7 +9,7 @@ from logging import getLogger
 from pathlib import Path
 from typing import Any, AsyncGenerator
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, APIRouter
 from fastapi.exceptions import FastAPIError
 
 from .common import set_log_level
@@ -123,25 +123,28 @@ class Lumary(FastAPI):
         # 👇 设置自定义文档
         setup_custom_openapi(self)
 
+        # 👇 设置异常处理（主应用和子应用都需要独立注册异常处理器，否则子应用路由抛错无法被捕获）
+        setup_exception_handlers(self)
+
+        # 👇 设置中间件（主应用和子应用都需要注册，FastAPI 挂载机制中，子应用的中间件会优先于主应用触发）
+        setup_middlewares(
+            self,
+            enable_cors=enable_cors,
+            allow_origins=allow_origins,
+            allow_methods=allow_methods,
+            allow_headers=allow_headers
+        )
+
         # 👇 如果不是子应用
         if not is_sub_app:
-            # 👇 设置异常处理
-            setup_exception_handlers(self)
-            # 👇 设置中间件
-            setup_middlewares(
-                self,
-                enable_cors=enable_cors,
-                allow_origins=allow_origins,
-                allow_methods=allow_methods,
-                allow_headers=allow_headers
-            )
-            # 👇 注册健康检查接口
-            self._register_health_check()
+            # 👇 注册系统内置接口
+            self._register_system_endpoints()
 
-    def _register_health_check(self) -> None:
-        """注册健康检查接口"""
+    def _register_system_endpoints(self) -> None:
+        """注册系统内置接口（健康检查、指标等）"""
+        router = APIRouter(prefix='/system', tags=['system'])
 
-        @self.get('/health', tags=['system'], summary='服务健康检查')
+        @router.get('/health', summary='服务健康检查')
         async def health(_request: Request) -> APIResponse[SystemHealthOut]:
             """服务健康检查
 
@@ -154,6 +157,15 @@ class Lumary(FastAPI):
                 debug=self.debug
             )
             return response_success(data=data, message='服务运行正常')
+
+        # 预留未来可能添加的其他系统接口
+        # @router.get('/metrics', summary='系统运行指标')
+        # async def metrics(_request: Request): ...
+
+        # @router.get('/info', summary='系统详细信息')
+        # async def sys_info(_request: Request): ...
+
+        self.include_router(router)
 
     def _load_sub_app(self, module_path: str, app_name: str) -> 'Lumary | None':
         """动态导入单个子应用

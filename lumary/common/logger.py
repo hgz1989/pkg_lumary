@@ -39,6 +39,7 @@ for logger_name in uvicorn_logger_names:
     logger = logging.getLogger(logger_name)
     logger.handlers.clear()  # 清空默认处理器
     logger.propagate = True  # 让它走根日志
+    logger.setLevel(logging.INFO)  # 屏蔽外部库的 DEBUG 日志，最低只输出 INFO
 
 
 # ===============================

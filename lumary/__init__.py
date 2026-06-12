@@ -62,8 +62,6 @@ from .schemas import (
     response_success,
     response_fail
 )
-from .services import BaseService
-from .websocket import WSConnectionManager
 
 __version__ = '0.1.6'
 
@@ -130,8 +128,5 @@ __all__ = [
     'response_fail',
 
     # 路由与服务
-    'CRUDRouter',
-    'BaseService',
-    # WebSocket连接管理器
-    'WSConnectionManager'
+    'BaseService'
 ]

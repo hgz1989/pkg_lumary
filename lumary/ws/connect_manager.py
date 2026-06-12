@@ -32,22 +32,22 @@ class WSConnectionManager:
         manager = WSConnectionManager()
 
         # 方式一：手动管理连接生命周期
-        @app.websocket("/ws")
-        async def ws_endpoint(websocket: WebSocket):
-            cid = await manager.connect(websocket, group="chat")
+        @app.ws("/ws")
+        async def ws_endpoint(ws: WebSocket):
+            cid = await manager.connect(ws, group="chat")
             try:
                 while True:
-                    data = await websocket.receive_json()
+                    data = await ws.receive_json()
                     await manager.broadcast_json(data, group="chat", exclude={cid})
             finally:
                 await manager.disconnect(cid)
 
         # 方式二：上下文管理器自动管理
-        @app.websocket("/ws")
-        async def ws_endpoint(websocket: WebSocket):
-            async with manager.lifespan(websocket, group="chat") as cid:
+        @app.ws("/ws")
+        async def ws_endpoint(ws: WebSocket):
+            async with manager.lifespan(ws, group="chat") as cid:
                 while True:
-                    data = await websocket.receive_json()
+                    data = await ws.receive_json()
                     await manager.broadcast_json(data, group="chat", exclude={cid})
     """
 
@@ -140,9 +140,9 @@ class WSConnectionManager:
             连接ID
 
         Examples:
-            async with manager.lifespan(websocket, group="room1") as cid:
+            async with manager.lifespan(ws, group="room1") as cid:
                 while True:
-                    data = await websocket.receive_json()
+                    data = await ws.receive_json()
                     await manager.broadcast_json(data, group="room1", exclude={cid})
         """
         cid = await self.connect(websocket, connection_id=connection_id, group=group)
