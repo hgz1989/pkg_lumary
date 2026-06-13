@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "lumary"
-version = "0.1.6"
+dynamic = ["version"]
 description = "基于 FastAPI 封装的生产级 Web 应用框架"
 readme = "README.md"
 license = { text = "MIT" }
@@ -44,9 +44,9 @@ standard = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/zarkhan/lumary"
-Repository = "https://github.com/zarkhan/lumary"
-Documentation = "https://github.com/zarkhan/lumary#readme"
+Homepage = "https://github.com/zarkhan/pkg_lumary"
+Repository = "https://github.com/zarkhan/pkg_lumary"
+Documentation = "https://github.com/zarkhan/pkg_lumary#readme"
 
 [tool.setuptools.packages.find]
 include = ["lumary*"]
@@ -54,12 +54,18 @@ include = ["lumary*"]
 [tool.setuptools.package-data]
 lumary = ["py.typed"]
 
+[tool.setuptools.dynamic]
+version = {attr = "lumary.__version__.__version__"}
+
 [tool.ruff]
 target-version = "py311"
 line-length = 120
 
 [tool.ruff.lint]
-select = ["E", "F", "I", "UP", "B", "SIM"]
+select = ["E", "F", "UP", "B", "SIM"]
+
+[tool.ruff.format]
+quote-style = "single"
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

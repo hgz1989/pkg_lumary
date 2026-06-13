@@ -1,0 +1,8 @@
+@baseUrl = http://127.0.0.1:8000
+
+### 1. 创建用户 (POST form-data)
+POST {{baseUrl}}/form
+Content-Type: multipart/form-data
+
+username=test
+

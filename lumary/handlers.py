@@ -1,15 +1,13 @@
 """
 @Author     : zarkhan
 @CreateDate : 2026/5/14
-@Description: 
+@Description: 全局异常处理器
 """
 from logging import getLogger
 
 from fastapi import FastAPI, Request, status
-from fastapi.responses import JSONResponse
 from fastapi.exceptions import RequestValidationError, HTTPException
-
-from .exceptions import BusinessException
+from fastapi.responses import JSONResponse
 from .schemas import response_fail
 
 logger = getLogger(__name__)
@@ -25,24 +23,31 @@ def setup_exception_handlers(app: FastAPI) -> None:
         app: 当前运行的 FastAPI 应用实例
     """
 
-    @app.exception_handler(BusinessException)
-    async def business_exception_handler(_request: Request, exc: BusinessException) -> JSONResponse:
-        """处理自定义业务异常
-
-        将 `BusinessException` 转换为 `JSONResponse` 返回给客户端
-        业务错误属于正常逻辑流转，HTTP 状态码始终返回 200 OK
+    @app.exception_handler(Exception)
+    async def global_exception_handler(_request: Request, exc: Exception) -> JSONResponse:
+        """处理未捕获的全局异常 (兜底方案)
 
         Args:
             _request: 当前请求对象（未使用）
-            exc: 捕获到的业务异常实例
+            exc: 异常实例
 
         Returns:
-            包含错误码和错误信息的 JSON 响应
+            HTTP 500 及统一错误格式的 JSON 响应
         """
-        logger.warning(f'Business exception occurred: {exc.message}')
-        # 👇 直接用 fail() → 自动生成标准 APIResponse
-        resp = response_fail(code=exc.code, message=exc.message, data=exc.data)
-        return JSONResponse(content=resp.model_dump())
+        logger.critical(f'Global anomalies occur: {exc}', exc_info=True)
+        # 调试模式截取异常信息，避免内容过长
+        err_detail = str(exc)[:300] if app.debug else None
+        # 构建统一错误响应
+        resp = response_fail(
+            code=500,
+            message='System internal errors; please contact your administrator',
+            data=err_detail
+        )
+
+        return JSONResponse(
+            content=resp.model_dump(),
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
 
     @app.exception_handler(RequestValidationError)
     async def validation_exception_handler(_request: Request, exc: RequestValidationError) -> JSONResponse:
@@ -68,10 +73,20 @@ def setup_exception_handlers(app: FastAPI) -> None:
         else:
             error_msg = 'Parameter verification error'
 
-        # 👇 直接用 fail() → 自动生成标准 APIResponse
-        resp = response_fail(code=status.HTTP_422_UNPROCESSABLE_CONTENT, message=error_msg, data=errors)
-        return JSONResponse(resp.model_dump(), status_code=status.HTTP_422_UNPROCESSABLE_CONTENT)
+        logger.error(f'Request validation error: {exc}', exc_info=True)
+        # 调试模式截取异常信息，避免内容过长
+        err_detail = error_msg if app.debug else None
 
+        # 将参数校验错误转化为内置 HTTP 异常，再交由 http_exception_handler 处理
+        # HTTP 422 Unprocessable Entity
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=error_msg
+        )
+
+    @app.exception_handler(400)
+    @app.exception_handler(401)
+    @app.exception_handler(403)
     @app.exception_handler(404)
     @app.exception_handler(405)
     @app.exception_handler(HTTPException)
@@ -88,26 +103,12 @@ def setup_exception_handlers(app: FastAPI) -> None:
         Returns:
             继承原状态码及统一错误格式的 JSON 响应
         """
-        # 👇 直接用 fail() → 自动生成标准 APIResponse
-        resp = response_fail(code=exc.status_code, message=str(exc.detail))
+        logger.error(f'HTTP exception occur: {exc.detail}', exc_info=True)
+        # 调试模式截取异常信息，避免内容过长
+        err_detail = str(exc.detail)[:300] if app.debug else None
+        resp = response_fail(
+            code=exc.status_code * 100,
+            message=str(exc.detail),
+            data=err_detail
+        )
         return JSONResponse(resp.model_dump(), status_code=exc.status_code)
-
-    @app.exception_handler(Exception)
-    async def global_exception_handler(_request: Request, exc: Exception) -> JSONResponse:
-        """处理未捕获的全局异常 (兜底方案)
-
-        拦截所有未被显式捕获的 Python 运行时错误（如空指针、索引越界、除零错误等）
-        记录完整的异常堆栈日志，并向客户端返回 500 系统错误提示
-
-        Args:
-            _request: 当前请求对象（未使用）
-            exc: 未捕获的任意 Python 异常实例
-
-        Returns:
-            HTTP 500 及系统内部错误提示
-        """
-        logger.critical(f'❌ Global anomalies occur: {exc}')
-
-        # 👇 直接用 fail() → 自动生成标准 APIResponse
-        resp = response_fail(code=status.HTTP_500_INTERNAL_SERVER_ERROR, message='系统内部错误，请联系管理员')
-        return JSONResponse(resp.model_dump(), status_code=status.HTTP_500_INTERNAL_SERVER_ERROR)

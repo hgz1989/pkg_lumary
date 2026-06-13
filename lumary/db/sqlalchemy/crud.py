@@ -1,18 +1,25 @@
 """
 @Author     : zarkhan
 @CreateDate : 2026/5/14
-@Description: 
+@Description: SQLAlchemy CRUD 泛型基类
 """
-from typing import Any, Generic, Sequence, TypeVar
+from collections.abc import Sequence
+from typing import TypeVar, Generic, Any
 
 from pydantic import BaseModel
-from sqlalchemy import inspect as sa_inspect, Select, text
+from sqlalchemy import (
+    inspect as sa_inspect,
+    Select,
+    text
+)
+from sqlalchemy.exc import (
+    NoResultFound,
+    IntegrityError
+)
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.sql import func, select
+from sqlalchemy.sql import select, func
 
 from .model import ModelBase
-
-from sqlalchemy.exc import IntegrityError, NoResultFound
 
 ModelType = TypeVar('ModelType', bound=ModelBase)
 CreateSchemaType = TypeVar('CreateSchemaType', bound=BaseModel)
@@ -25,6 +32,7 @@ class CRUDBase(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
     提供标准创建、读取、更新、删除操作(仅支持异步)
     子类必须在类级别显式定义 model 属性
     """
+
     model: type[ModelType]
 
     def __init__(self, db: AsyncSession):
@@ -54,7 +62,7 @@ class CRUDBase(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
             添加了软删除过滤条件的查询语句
         """
         if hasattr(self.model, 'is_deleted'):
-            stmt = stmt.where(getattr(self.model, 'is_deleted').is_(False))
+            stmt = stmt.where(self.model.is_deleted.is_(False))
 
         return stmt
 
@@ -148,7 +156,7 @@ class CRUDBase(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
             limit: int = 100,
             order_by: Any | Sequence[Any] | None = None,
             options: list | None = None,
-            **kwargs: Any
+            **kwargs: Any,
     ) -> Sequence[ModelType]:
         """获取多条记录支持分页、条件过滤和排序
 
@@ -172,10 +180,7 @@ class CRUDBase(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
         stmt = self._apply_kwargs_filter(stmt, kwargs)
 
         if order_by is not None:
-            if isinstance(order_by, (list, tuple)):
-                stmt = stmt.order_by(*order_by)
-            else:
-                stmt = stmt.order_by(order_by)
+            stmt = stmt.order_by(*order_by) if isinstance(order_by, (list, tuple)) else stmt.order_by(order_by)
 
         if options:
             stmt = stmt.options(*options)
@@ -193,10 +198,7 @@ class CRUDBase(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
         Returns:
             创建成功的模型实例
         """
-        obj_in_data = {
-            k: v for k, v in obj_in.model_dump(exclude_unset=True).items()
-            if k in self.valid_columns
-        }
+        obj_in_data = {k: v for k, v in obj_in.model_dump(exclude_unset=True).items() if k in self.valid_columns}
 
         db_obj = self.model(**obj_in_data)
         self.db.add(db_obj)
@@ -204,22 +206,18 @@ class CRUDBase(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
         return db_obj
 
     async def batch_create(
-            self,
-            *,
-            objs_in: list[CreateSchemaType | dict],
-            ignore_errors: bool = False,
-            return_objs: bool = True
+            self, *, objs_in: list[CreateSchemaType | dict], ignore_errors: bool = False, return_objs: bool = True
     ) -> list[ModelType]:
         """批量创建记录
 
         Args:
             objs_in: 待创建的数据列表（Schema 或 dict）
-            ignore_errors: 是否忽略单条插入的错误（如唯一键冲突）。
-                           如果为 False，遇到错误将抛出异常，整个事务可以被调用方回滚。
-                           如果为 True，将跳过出错的记录，只插入成功的数据。
-            return_objs: 是否需要返回带有数据库默认值（如ID）的完整模型对象。
+            ignore_errors: 是否忽略单条插入的错误（如唯一键冲突）
+                           如果为 False，遇到错误将抛出异常，整个事务可以被调用方回滚
+                           如果为 True，将跳过出错的记录，只插入成功的数据
+            return_objs: 是否需要返回带有数据库默认值（如ID）的完整模型对象
                          为 True 时使用 add_all + flush（性能略低，但能拿到所有 ID）；
-                         为 False 时未来可优化为 execute(insert().values()) 提高性能。
+                         为 False 时未来可优化为 execute(insert().values()) 提高性能
 
         Returns:
             成功创建的模型实例列表
@@ -229,10 +227,7 @@ class CRUDBase(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
             db_objs = []
 
             for obj_in in objs_in:
-                if isinstance(obj_in, dict):
-                    obj_data = obj_in
-                else:
-                    obj_data = obj_in.model_dump()
+                obj_data = obj_in if isinstance(obj_in, dict) else obj_in.model_dump()
                 obj_data = {k: v for k, v in obj_data.items() if k in self.valid_columns}
                 db_obj = self.model(**obj_data)
                 db_objs.append(db_obj)
@@ -244,13 +239,10 @@ class CRUDBase(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
             return db_objs
 
         # 场景 2：忽略错误记录（如某条数据冲突不影响其他数据入库）
-        # 这种模式下只能逐条 add + flush 并捕获异常，因为 add_all 会导致整个 flush 失败
+        # 这种模式下只能逐条 add + flush 并捕获异常，因为批量 add_all 会导致整个 flush 失败
         successful_objs = []
         for obj_in in objs_in:
-            if isinstance(obj_in, dict):
-                obj_data = obj_in
-            else:
-                obj_data = obj_in.model_dump()
+            obj_data = obj_in if isinstance(obj_in, dict) else obj_in.model_dump()
             obj_data = {k: v for k, v in obj_data.items() if k in self.valid_columns}
             db_obj = self.model(**obj_data)
             self.db.add(db_obj)
@@ -265,12 +257,7 @@ class CRUDBase(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
 
         return successful_objs
 
-    async def update(
-            self,
-            *,
-            db_obj: ModelType,
-            obj_in: UpdateSchemaType | dict[str, Any]
-    ) -> ModelType:
+    async def update(self, *, db_obj: ModelType, obj_in: UpdateSchemaType | dict[str, Any]) -> ModelType:
         """更新记录
 
         Args:
@@ -280,15 +267,9 @@ class CRUDBase(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
         Returns:
             更新后的模型实例
         """
-        if isinstance(obj_in, dict):
-            update_data = obj_in
-        else:
-            update_data = obj_in.model_dump(exclude_unset=True)
+        update_data = obj_in if isinstance(obj_in, dict) else obj_in.model_dump(exclude_unset=True)
 
-        update_data = {
-            k: v for k, v in update_data.items()
-            if k in self.valid_columns
-        }
+        update_data = {k: v for k, v in update_data.items() if k in self.valid_columns}
 
         for field, value in update_data.items():
             setattr(db_obj, field, value)
@@ -361,12 +342,7 @@ class CRUDBase(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
 
         return db_obj
 
-    async def execute_stmt(
-            self,
-            *,
-            stmt: Any,
-            options: list | None = None
-    ) -> Any:
+    async def execute_stmt(self, *, stmt: Any, options: list | None = None) -> Any:
         """执行外部传入的 SQLAlchemy 语句
 
         支持 Select / Insert / Update / Delete 等任意可执行语句，
@@ -384,12 +360,7 @@ class CRUDBase(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
 
         return await self.db.execute(stmt)
 
-    async def execute_sql(
-            self,
-            *,
-            sql: str,
-            params: dict[str, Any] | None = None
-    ) -> Any:
+    async def execute_sql(self, *, sql: str, params: dict[str, Any] | None = None) -> Any:
         """执行原始 SQL 语句
 
         调用方自行处理返回结果（scalars / fetchone / fetchall 等）

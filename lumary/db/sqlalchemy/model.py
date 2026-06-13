@@ -1,7 +1,7 @@
 """
 @Author     : zarkhan
 @CreateDate : 2026/5/14
-@Description: 
+@Description: SQLAlchemy ORM 基础模型
 """
 from datetime import datetime
 
@@ -11,7 +11,6 @@ from sqlalchemy.sql import func
 from ulid import ULID
 
 from .base import Base
-
 
 class ModelBase(Base):
     """SQLAlchemy 模型基础类

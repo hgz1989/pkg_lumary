@@ -1,8 +1,12 @@
 """
 @Author     : zarkhan
 @CreateDate : 2026/5/14
-@Description: 
+@Description: 应用生命周期钩子管理
 """
+from collections.abc import (
+    Callable,
+    AsyncGenerator
+)
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from inspect import signature
@@ -10,9 +14,7 @@ from logging import getLogger
 from typing import (
     runtime_checkable,
     Protocol,
-    AsyncGenerator,
-    overload,
-    Callable
+    overload
 )
 
 from fastapi import FastAPI
@@ -20,25 +22,23 @@ from fastapi import FastAPI
 logger = getLogger(__name__)
 
 
-# ===============================
 # 类型协议
-# ===============================
 @runtime_checkable
 class _NoArgHook(Protocol):
+    """无参数钩子协议定义"""
     async def __call__(self) -> None: ...
 
 
 @runtime_checkable
 class _AppArgHook(Protocol):
+    """带 FastAPI 实例参数钩子协议定义"""
     async def __call__(self, app: FastAPI) -> None: ...
 
 
 HookFunc = _NoArgHook | _AppArgHook
 
 
-# ===============================
 # 钩子条目
-# ===============================
 @dataclass(frozen=True)
 class _HookItem:
     func: HookFunc
@@ -61,15 +61,10 @@ class _HookItem:
         if not isinstance(other, _HookItem):
             return False
 
-        return (
-                self.func.__name__ == other.func.__name__
-                and id(self.func) == id(other.func)
-        )
+        return self.func.__name__ == other.func.__name__ and id(self.func) == id(other.func)
 
 
-# ===============================
 # 钩子注册表
-# ===============================
 class HookRegistry:
     """生命周期钩子注册表
 
@@ -91,12 +86,7 @@ class HookRegistry:
         self._startup_hooks: list[_HookItem] = []
         self._shutdown_hooks: list[_HookItem] = []
 
-    def register_startup(
-            self,
-            func: HookFunc,
-            priority: int,
-            abort_on_exception: bool
-    ) -> None:
+    def register_startup(self, func: HookFunc, priority: int, abort_on_exception: bool) -> None:
         """将启动钩子注册到列表中
 
         按优先级从大到小降序排列，priority 值越大的函数越先执行
@@ -113,12 +103,7 @@ class HookRegistry:
             self._startup_hooks.append(item)
             self._startup_hooks.sort(key=lambda x: -x.priority)
 
-    def register_shutdown(
-            self,
-            func: HookFunc,
-            priority: int,
-            abort_on_exception: bool
-    ) -> None:
+    def register_shutdown(self, func: HookFunc, priority: int, abort_on_exception: bool) -> None:
         """将关闭钩子注册到列表中
 
         按优先级从小到大升序排列，以便进行反向清理
@@ -180,37 +165,43 @@ class HookRegistry:
                     await item.func()
             except Exception as e:
                 name = item.func.__name__
-                logger.error(f'❌ [生命周期钩子执行失败] {name}: {str(e)}')
+                logger.error(f'[生命周期钩子执行失败] {name}: {str(e)}')
 
                 if item.abort_on_exception:
-                    raise RuntimeError(f'❌ [启动/关闭终止：钩子 {name} 异常]') from e
+                    raise RuntimeError(f'[启动/关闭终止：钩子 {name} 异常]') from e
 
     def clear(self) -> None:
         """清空所有已注册的钩子（用于测试隔离）"""
         self._startup_hooks.clear()
         self._shutdown_hooks.clear()
 
-    # ===============================
     # 实例级装饰器
-    # ===============================
     @overload
-    def on_startup(self, func: HookFunc) -> HookFunc: ...
+    def on_startup(self, func: HookFunc) -> HookFunc:
+        """注册服务启动(Startup)生命周期钩子的装饰器（实例级）
+        
+        Args:
+            func: 挂载此装饰器的异步函数
+            
+        Returns:
+            挂载的装饰器函数
+        """
+        ...
 
     @overload
-    def on_startup(
-            self,
-            *,
-            priority: int = 50,
-            abort_on_exception: bool = True
-    ) -> Callable[[HookFunc], HookFunc]: ...
+    def on_startup(self, *, priority: int = 50, abort_on_exception: bool = True) -> Callable[[HookFunc], HookFunc]:
+        """注册服务启动(Startup)生命周期钩子的装饰器（实例级）
+        
+        Args:
+            priority: 优先级 (默认 50)。值越大，越早被执行
+            abort_on_exception: 如果执行报错是否抛出异常阻止启动 (默认 True)
+            
+        Returns:
+            挂载的装饰器函数
+        """
+        ...
 
-    def on_startup(
-            self,
-            func: HookFunc | None = None,
-            *,
-            priority: int = 50,
-            abort_on_exception: bool = True
-    ):
+    def on_startup(self, func: HookFunc | None = None, *, priority: int = 50, abort_on_exception: bool = True):
         """注册服务启动(Startup)生命周期钩子的装饰器（实例级）
 
         Args:
@@ -220,29 +211,47 @@ class HookRegistry:
         """
 
         def decorator(fn: HookFunc) -> HookFunc:
+            """内部装饰器函数
+
+            Args:
+                fn: 被装饰的钩子函数
+
+            Returns:
+                原封不动返回被装饰的函数
+            """
             self.register_startup(fn, priority, abort_on_exception)
             return fn
 
         return decorator(func) if func else decorator
 
     @overload
-    def on_shutdown(self, func: HookFunc) -> HookFunc: ...
+    def on_shutdown(self, func: HookFunc) -> HookFunc:
+        """注册服务关闭(Shutdown)生命周期钩子的装饰器（实例级）
+        
+        Args:
+            func: 挂载此装饰器的异步函数
+            
+        Returns:
+            挂载的装饰器函数
+        """
+        ...
 
     @overload
     def on_shutdown(
-            self,
-            *,
-            priority: int = 50,
-            abort_on_exception: bool = False
-    ) -> Callable[[HookFunc], HookFunc]: ...
+        self, *, priority: int = 50, abort_on_exception: bool = False
+    ) -> Callable[[HookFunc], HookFunc]:
+        """注册服务关闭(Shutdown)生命周期钩子的装饰器（实例级）
+        
+        Args:
+            priority: 优先级 (默认 50)
+            abort_on_exception: 报错时是否抛出异常 (默认 False)
+            
+        Returns:
+            挂载的装饰器函数
+        """
+        ...
 
-    def on_shutdown(
-            self,
-            func: HookFunc | None = None,
-            *,
-            priority: int = 50,
-            abort_on_exception: bool = False
-    ):
+    def on_shutdown(self, func: HookFunc | None = None, *, priority: int = 50, abort_on_exception: bool = False):
         """注册服务关闭(Shutdown)生命周期钩子的装饰器（实例级）
 
         Args:
@@ -252,26 +261,27 @@ class HookRegistry:
         """
 
         def decorator(fn: HookFunc) -> HookFunc:
+            """内部装饰器函数
+
+            Args:
+                fn: 被装饰的钩子函数
+
+            Returns:
+                原封不动返回被装饰的函数
+            """
             self.register_shutdown(fn, priority, abort_on_exception)
             return fn
 
         return decorator(func) if func else decorator
 
 
-# ===============================
 # 默认全局注册表（向后兼容）
-# ===============================
 _default_registry = HookRegistry()
 
 
-# ===============================
 # FastAPI 生命周期
-# ===============================
 @asynccontextmanager
-async def fastapi_lifespan(
-        app: FastAPI,
-        registry: HookRegistry | None = None
-) -> AsyncGenerator[None, None]:
+async def fastapi_lifespan(app: FastAPI, registry: HookRegistry | None = None) -> AsyncGenerator[None, None]:
     """FastAPI 应用的生命周期管理函数
 
     用于处理应用启动前（startup）和关闭后（shutdown）的逻辑，
@@ -290,9 +300,7 @@ async def fastapi_lifespan(
     await reg.run_shutdown(app)
 
 
-# ===============================
 # 模块级装饰器（向后兼容）
-# ===============================
 @overload
 def on_startup(func: HookFunc) -> HookFunc:
     """注册服务启动(Startup)生命周期钩子的装饰器
@@ -307,11 +315,7 @@ def on_startup(func: HookFunc) -> HookFunc:
 
 
 @overload
-def on_startup(
-        *,
-        priority: int = 50,
-        abort_on_exception: bool = True
-) -> Callable[[HookFunc], HookFunc]:
+def on_startup(*, priority: int = 50, abort_on_exception: bool = True) -> Callable[[HookFunc], HookFunc]:
     """注册服务启动(Startup)生命周期钩子的装饰器
 
     允许您将应用启动时的初始化逻辑（如数据库连接、数据预热等）分散到具体的业务模块中
@@ -327,12 +331,7 @@ def on_startup(
     ...
 
 
-def on_startup(
-        func: HookFunc | None = None,
-        *,
-        priority: int = 50,
-        abort_on_exception: bool = True
-):
+def on_startup(func: HookFunc | None = None, *, priority: int = 50, abort_on_exception: bool = True):
     """注册服务启动(Startup)生命周期钩子的装饰器
 
     允许您将应用启动时的初始化逻辑（如数据库连接、数据预热等）分散到具体的业务模块中
@@ -350,10 +349,18 @@ def on_startup(
 
         @on_startup
         async def load_cache(app: FastAPI):
-            app.state.cache = ...
+            app.state.cache = .
     """
 
     def decorator(fn: HookFunc) -> HookFunc:
+        """内部装饰器函数
+
+        Args:
+            fn: 被装饰的钩子函数
+
+        Returns:
+            原封不动返回被装饰的函数
+        """
         _default_registry.register_startup(fn, priority, abort_on_exception)
         return fn
 
@@ -374,11 +381,7 @@ def on_shutdown(func: HookFunc) -> HookFunc:
 
 
 @overload
-def on_shutdown(
-        *,
-        priority: int = 50,
-        abort_on_exception: bool = False
-) -> Callable[[HookFunc], HookFunc]:
+def on_shutdown(*, priority: int = 50, abort_on_exception: bool = False) -> Callable[[HookFunc], HookFunc]:
     """注册服务关闭(Shutdown)生命周期钩子的装饰器
 
     Args:
@@ -391,12 +394,7 @@ def on_shutdown(
     ...
 
 
-def on_shutdown(
-        func: HookFunc | None = None,
-        *,
-        priority: int = 50,
-        abort_on_exception: bool = False
-):
+def on_shutdown(func: HookFunc | None = None, *, priority: int = 50, abort_on_exception: bool = False):
     """注册服务关闭(Shutdown)生命周期钩子的装饰器
 
     允许您将应用关闭时的清理逻辑（如释放连接池、刷新日志等）分散到具体的业务模块中
@@ -415,6 +413,14 @@ def on_shutdown(
     """
 
     def decorator(fn: HookFunc) -> HookFunc:
+        """内部装饰器函数
+
+        Args:
+            fn: 被装饰的钩子函数
+
+        Returns:
+            原封不动返回被装饰的函数
+        """
         _default_registry.register_shutdown(fn, priority, abort_on_exception)
         return fn
 

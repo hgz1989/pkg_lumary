@@ -1,10 +1,9 @@
 """
 @Author     : zarkhan
-@Date       : 2026/5/18
-@Description:
+@CreateDate : 2026/5/18
+@Description: @Date       : 2026/5/18 
 """
 from threading import Lock
-
 
 class Singleton:
     """线程安全单例基类

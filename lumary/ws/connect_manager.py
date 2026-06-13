@@ -4,9 +4,10 @@
 @Description: WebSocket 连接管理器
 """
 from asyncio import gather
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from logging import getLogger
-from typing import Any, AsyncGenerator
+from typing import Any
 from uuid import uuid4
 
 from fastapi import WebSocket
@@ -14,9 +15,7 @@ from fastapi import WebSocket
 logger = getLogger(__name__)
 
 
-# ===============================
 # WebSocket 连接管理器
-# ===============================
 class WSConnectionManager:
     """WebSocket 连接管理器
 
@@ -34,21 +33,21 @@ class WSConnectionManager:
         # 方式一：手动管理连接生命周期
         @app.ws("/ws")
         async def ws_endpoint(ws: WebSocket):
-            cid = await manager.connect(ws, group="chat")
+            cid = await manager.connect(ws, group='chat')
             try:
                 while True:
                     data = await ws.receive_json()
-                    await manager.broadcast_json(data, group="chat", exclude={cid})
+                    await manager.broadcast_json(data, group='chat', exclude={cid})
             finally:
                 await manager.disconnect(cid)
 
-        # 方式二：上下文管理器自动管理
-        @app.ws("/ws")
-        async def ws_endpoint(ws: WebSocket):
-            async with manager.lifespan(ws, group="chat") as cid:
+        # 方式二：使用上下文管理器（推荐，更安全）
+        @app.websocket('/ws2')
+        async def ws_endpoint2(ws: WebSocket):
+            async with manager.lifespan(ws, group='chat') as cid:
                 while True:
                     data = await ws.receive_json()
-                    await manager.broadcast_json(data, group="chat", exclude={cid})
+                    await manager.broadcast_json(data, group='chat', exclude={cid})
     """
 
     __slots__ = ('_connections', '_groups')
@@ -58,16 +57,9 @@ class WSConnectionManager:
         self._connections: dict[str, WebSocket] = {}
         self._groups: dict[str, set[str]] = {}
 
-    # ===============================
-    # 连接生命周期
-    # ===============================
-    async def connect(
-            self,
-            websocket: WebSocket,
-            *,
-            connection_id: str | None = None,
-            group: str | None = None
-    ) -> str:
+        # 连接生命周期
+
+    async def connect(self, websocket: WebSocket, *, connection_id: str | None = None, group: str | None = None) -> str:
         """接受并存储新的 WebSocket 连接
 
         Args:
@@ -102,16 +94,16 @@ class WSConnectionManager:
         if ws is None:
             return
 
-        # 👇 从所有分组中移除
+        # 从所有分组中移除
         for group_conns in self._groups.values():
             group_conns.discard(connection_id)
 
-        # 👇 清理空分组
+        # 清理空分组
         empty_groups = [g for g, conns in self._groups.items() if not conns]
         for g in empty_groups:
             del self._groups[g]
 
-        # 👇 安全关闭连接
+        # 安全关闭连接
         try:
             await ws.close()
         except Exception as e:
@@ -121,11 +113,7 @@ class WSConnectionManager:
 
     @asynccontextmanager
     async def lifespan(
-            self,
-            websocket: WebSocket,
-            *,
-            connection_id: str | None = None,
-            group: str | None = None
+        self, websocket: WebSocket, *, connection_id: str | None = None, group: str | None = None
     ) -> AsyncGenerator[str, None]:
         """上下文管理器方式管理连接生命周期
 
@@ -151,9 +139,7 @@ class WSConnectionManager:
         finally:
             await self.disconnect(cid)
 
-    # ===============================
     # 分组管理
-    # ===============================
     def join_group(self, connection_id: str, group: str) -> None:
         """将已有连接加入指定分组
 
@@ -188,9 +174,7 @@ class WSConnectionManager:
 
         logger.debug(f'WebSocket {connection_id} left group: {group}')
 
-    # ===============================
     # 单播
-    # ===============================
     async def send_text(self, connection_id: str, message: str) -> None:
         """向指定连接发送文本消息
 
@@ -223,16 +207,8 @@ class WSConnectionManager:
         except Exception as e:
             logger.error(f'Failed to send json to {connection_id}: {e}')
 
-    # ===============================
     # 广播
-    # ===============================
-    async def broadcast_text(
-            self,
-            message: str,
-            *,
-            group: str | None = None,
-            exclude: set[str] | None = None
-    ) -> None:
+    async def broadcast_text(self, message: str, *, group: str | None = None, exclude: set[str] | None = None) -> None:
         """广播文本消息
 
         Args:
@@ -246,13 +222,7 @@ class WSConnectionManager:
 
         await gather(*[self.send_text(cid, message) for cid in targets])
 
-    async def broadcast_json(
-            self,
-            data: Any,
-            *,
-            group: str | None = None,
-            exclude: set[str] | None = None
-    ) -> None:
+    async def broadcast_json(self, data: Any, *, group: str | None = None, exclude: set[str] | None = None) -> None:
         """广播 JSON 数据
 
         Args:
@@ -266,14 +236,8 @@ class WSConnectionManager:
 
         await gather(*[self.send_json(cid, data) for cid in targets])
 
-    # ===============================
     # 内部方法
-    # ===============================
-    def _resolve_targets(
-            self,
-            group: str | None,
-            exclude: set[str] | None
-    ) -> set[str]:
+    def _resolve_targets(self, group: str | None, exclude: set[str] | None) -> set[str]:
         """解析广播目标连接集合
 
         Args:
@@ -283,19 +247,14 @@ class WSConnectionManager:
         Returns:
             目标连接ID集合
         """
-        if group:
-            targets = set(self._groups.get(group, set()))
-        else:
-            targets = set(self._connections.keys())
+        targets = set(self._groups.get(group, set())) if group else set(self._connections.keys())
 
         if exclude:
             targets -= exclude
 
         return targets
 
-    # ===============================
     # 属性 & 魔术方法
-    # ===============================
     @property
     def active_count(self) -> int:
         """当前活跃连接数"""
@@ -335,9 +294,4 @@ class WSConnectionManager:
         return connection_id in self._connections
 
     def __repr__(self) -> str:
-        return (
-            f'{self.__class__.__name__}('
-            f'active={len(self._connections)}, '
-            f'groups={list(self._groups.keys())}'
-            f')'
-        )
+        return f'{self.__class__.__name__}(active={len(self._connections)}, groups={list(self._groups.keys())})'

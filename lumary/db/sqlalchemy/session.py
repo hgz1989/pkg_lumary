@@ -1,13 +1,20 @@
 """
 @Author     : zarkhan
 @CreateDate : 2026/5/14
-@Description: 
+@Description: SQLAlchemy 会话工厂
 """
+from collections.abc import (
+    Callable,
+    AsyncGenerator
+)
 from contextlib import asynccontextmanager
-from typing import TypeVar, AsyncGenerator, Callable
+from typing import TypeVar
 
-from fastapi import Depends
-from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
+from sqlalchemy.ext.asyncio import (
+    AsyncEngine,
+    async_sessionmaker,
+    AsyncSession
+)
 
 T = TypeVar('T')
 
@@ -23,10 +30,7 @@ class SessionFactory:
         """
         self.engine = engine
         self.session_factory = async_sessionmaker(
-            bind=engine,
-            class_=AsyncSession,
-            expire_on_commit=False,
-            autoflush=False
+            bind=engine, class_=AsyncSession, expire_on_commit=False, autoflush=False
         )
 
     def get_service(self, service_cls: type[T]) -> Callable[[], T]:
@@ -40,6 +44,11 @@ class SessionFactory:
         """
 
         async def dependency() -> T:
+            """生成服务依赖的工厂方法
+
+            Returns:
+                服务类实例
+            """
             async with self.get_session() as db:
                 return service_cls(db=db)
 

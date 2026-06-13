@@ -1,13 +1,12 @@
 """
 @Author     : zarkhan
 @CreateDate : 2026/5/14
-@Description: 
+@Description: SQLAlchemy 混入类
 """
 from datetime import datetime
 
-from sqlalchemy import DateTime, Boolean
+from sqlalchemy import Boolean, DateTime
 from sqlalchemy.orm import Mapped, mapped_column
-
 
 class SoftDeleteMixin:
     """SQLAlchemy 软删除混入类

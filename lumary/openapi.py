@@ -1,13 +1,12 @@
 """
 @Author     : zarkhan
 @CreateDate : 2026/5/14
-@Description: 
+@Description: OpenAPI 文档自定义配置
 """
 from typing import Any
 
 from fastapi import FastAPI
 from fastapi.openapi.utils import get_openapi
-
 
 def setup_custom_openapi(app: FastAPI) -> None:
     """设置自定义OPENAPI
@@ -38,7 +37,7 @@ def setup_custom_openapi(app: FastAPI) -> None:
             terms_of_service=app.terms_of_service,
             contact=app.contact,
             license_info=app.license_info,
-            separate_input_output_schemas=app.separate_input_output_schemas
+            separate_input_output_schemas=app.separate_input_output_schemas,
         )
 
         components = openapi_schema.setdefault('components', {})

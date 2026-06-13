@@ -1,7 +1,7 @@
 """
 @Author     : zarkhan
 @CreateDate : 2026/5/14
-@Description: 
+@Description: Lumary 模块
 """
 from .base import Base
 from .crud import CRUDBase

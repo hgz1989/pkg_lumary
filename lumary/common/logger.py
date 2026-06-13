@@ -1,39 +1,23 @@
 """
 @Author     : zarkhan
-@Date       : 2026/5/14
-@Description:
+@CreateDate : 2026/5/14
+@Description: 日志配置与管理
 """
 import logging
 import sys
+from logging.handlers import (
+    TimedRotatingFileHandler
+)
 from pathlib import Path
-from logging.handlers import TimedRotatingFileHandler
 
-# ===============================
 # 日志格式定义
-# ===============================
-NORMAL_FORMAT = (
-    '%(asctime)s | %(levelname)-8s | %(name)-50.50s | %(lineno)4d | %(message)s'
-)
+NORMAL_FORMAT = '%(asctime)s | %(levelname)-8s | %(name)-50.50s | %(lineno)4d | %(message)s'
 
-# ===============================
 # 配置日志格式
-# ===============================
-logging.basicConfig(
-    level=logging.DEBUG,
-    format=NORMAL_FORMAT,
-    force=True
-)
+logging.basicConfig(level=logging.DEBUG, format=NORMAL_FORMAT, force=True)
 
-# ===============================
 # 强制接管 uvicorn 的所有日志（核心！）
-# ===============================
-uvicorn_logger_names = [
-    'uvicorn',
-    'uvicorn.error',
-    'uvicorn.access',
-    'fastapi',
-    'httpx'
-]
+uvicorn_logger_names = ['uvicorn', 'uvicorn.error', 'uvicorn.access', 'fastapi', 'httpx']
 
 for logger_name in uvicorn_logger_names:
     logger = logging.getLogger(logger_name)
@@ -42,9 +26,7 @@ for logger_name in uvicorn_logger_names:
     logger.setLevel(logging.INFO)  # 屏蔽外部库的 DEBUG 日志，最低只输出 INFO
 
 
-# ===============================
-# ✅ 方法1：动态修改全局日志级别
-# ===============================
+# 方法1：动态修改全局日志级别
 def set_log_level(level: str | int) -> None:
     """修改全局日志级别（包括 FastAPI/Uvicorn 所有日志）
 
@@ -61,9 +43,7 @@ def set_log_level(level: str | int) -> None:
     root_logger.setLevel(level)
 
 
-# ===============================
-# ✅ 方法2：动态修改全局日志格式
-# ===============================
+# 方法2：动态修改全局日志格式
 def set_log_format(log_format: str) -> None:
     """修改全局日志格式，所有输出立即生效
 
@@ -78,26 +58,24 @@ def set_log_format(log_format: str) -> None:
         handler.setFormatter(formatter)
 
 
-# ===============================
-# ✅ 方法3：配置应用日志
-# ===============================
+# 方法3：配置应用日志
 def setup_logger(
     log_dir: str | Path | None = None,
     filename: str = 'app.log',
     when: str = 'midnight',
     backup_count: int = 30,
     encoding: str = 'utf-8',
-    enable_console: bool = True
+    enable_console: bool = True,
 ) -> None:
     """一键配置应用的日志（支持控制台开关与文件日志）
 
     Args:
-        log_dir: 日志保存目录。若不提供，则不开启文件日志。
-        filename: 日志文件名。
-        when: 轮转周期 (如 'midnight' 每天半夜轮转, 'H' 每小时)。
-        backup_count: 保留的日志文件数量。
-        encoding: 文件编码。
-        enable_console: 是否在控制台输出日志。
+        log_dir: 日志保存目录。若不提供，则不开启文件日志
+        filename: 日志文件名
+        when: 轮转周期 (如 'midnight' 每天半夜轮转, 'H' 每小时)
+        backup_count: 保留的日志文件数量
+        encoding: 文件编码
+        enable_console: 是否在控制台输出日志
     """
     root_logger = logging.getLogger()
 
@@ -124,7 +102,8 @@ def setup_logger(
     else:
         # 移除所有非文件的 StreamHandler
         handlers_to_remove = [
-            h for h in root_logger.handlers
+            h
+            for h in root_logger.handlers
             if isinstance(h, logging.StreamHandler) and not isinstance(h, logging.FileHandler)
         ]
         for h in handlers_to_remove:
@@ -141,14 +120,10 @@ def setup_logger(
             isinstance(h, logging.FileHandler) and getattr(h, 'baseFilename', '') == str(file_path.absolute())
             for h in root_logger.handlers
         )
-        
+
         if not has_file_handler:
             file_handler = TimedRotatingFileHandler(
-                filename=str(file_path),
-                when=when,
-                interval=1,
-                backupCount=backup_count,
-                encoding=encoding
+                filename=str(file_path), when=when, interval=1, backupCount=backup_count, encoding=encoding
             )
             file_handler.setFormatter(current_formatter)
             root_logger.addHandler(file_handler)

@@ -1,12 +1,16 @@
 """
 @Author     : zarkhan
 @CreateDate : 2026/5/14
-@Description: 
+@Description: SQLAlchemy 引擎与连接管理
 """
-from typing import Mapping, Any
+from collections.abc import Mapping
+from typing import Any
 from urllib.parse import urlparse
 
-from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
+from sqlalchemy.ext.asyncio import (
+    AsyncEngine,
+    create_async_engine
+)
 
 # 定义支持的异步驱动列表
 ASYNC_DRIVERS = frozenset({'asyncpg', 'asyncmy', 'aiomysql', 'aiosqlite', 'aioodbc'})
@@ -38,13 +42,11 @@ def _connect_args_from_url(url: str) -> dict:
         # SQLite 共享连接所需配置
         return {'check_same_thread': False}
 
-    if _is_async_driver(url):
-        # 异步驱动特定的连接参数（示例：asyncpg）
-        if 'asyncpg' in scheme:
-            return {
-                'statement_cache_size': 0,
-                'prepared_statement_cache_size': 0,
-            }
+    if _is_async_driver(url) and 'asyncpg' in scheme:
+        return {
+            'statement_cache_size': 0,
+            'prepared_statement_cache_size': 0,
+        }
 
     return {}
 
@@ -55,7 +57,7 @@ def create_db_engine(
         echo: bool = False,
         pool_pre_ping: bool = True,
         connect_args: Mapping[str, Any] | None = None,
-        **engine_kwargs: Any
+        **engine_kwargs: Any,
 ) -> AsyncEngine:
     """自动创建异步引擎
 
@@ -73,14 +75,13 @@ def create_db_engine(
     """
     if not _is_async_driver(url):
         raise ValueError(
-            f'URL "{url}" is not an async driver,only asynchronous drives are supported. Please check your settings.')
+            f'URL "{url}" is not an async driver,only asynchronous drives are supported. Please check your settings.'
+        )
 
     default_args = _connect_args_from_url(url)
     merged_args = {**default_args, **(connect_args or {})}
-
     return create_async_engine(
-        url,
-        echo=echo,
+        url, echo=echo,
         pool_pre_ping=pool_pre_ping,
         connect_args=merged_args,
         **engine_kwargs
