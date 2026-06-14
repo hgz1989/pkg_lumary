@@ -4,5 +4,14 @@
 POST {{baseUrl}}/form
 Content-Type: multipart/form-data
 
-username=test
+{}
 
+
+### 2. 测试
+POST {{baseUrl}}/user
+Content-Type: text/xml
+
+<user>
+    <name>张三</name>
+    <age>20</age>
+</user>

@@ -43,4 +43,4 @@ def setup_middlewares(
             allow_methods=allow_methods or ['*'],
             allow_headers=allow_headers or ['*'],
         )
-        logger.info('Cross-Origin Resource Sharing enabled')
+        logger.info(f'[{app.title}] Cross-Origin Resource Sharing enabled')

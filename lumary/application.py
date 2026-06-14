@@ -91,12 +91,12 @@ class Lumary(FastAPI):
             # 清空子应用根路径
             if 'root_path' in kwargs:
                 kwargs.pop('root_path')
-                logger.debug('The sub-app root_path has been automatically cleared')
+                logger.debug(f'The sub-app [{self.title}] root_path has been automatically cleared')
 
             # 清空子应用生命周期管理
             if 'lifespan' in kwargs:
                 kwargs.pop('lifespan')
-                logger.debug('The sub-app lifespan has been automatically cleared')
+                logger.debug(f'The sub-app [{self.title}] lifespan has been automatically cleared')
 
         # 设置默认值
         kwargs.setdefault('terms_of_service', _DEFAULT_TERMS_OF_SERVICE)
@@ -130,7 +130,7 @@ class Lumary(FastAPI):
         if not is_sub_app:
             # 注册系统内置接口
             self._register_system_endpoints()
-            
+
         # 设置中间件（主应用和子应用都需要注册，FastAPI 挂载机制中，子应用的中间件会优先于主应用触发）
         setup_middlewares(
             self,
@@ -214,6 +214,8 @@ class Lumary(FastAPI):
 
         apps_folder_name = apps_path.name
 
+        logger.info(f'Starting to mount sub-applications')
+        success_mounted_list = []
         # 遍历目录
         for path in apps_path.iterdir():
             if not path.is_dir():
@@ -237,11 +239,18 @@ class Lumary(FastAPI):
             # 如果导入成功 → 挂载子应用
             if app is not None:
                 # 如果当前实例是子应用 → 直接报错禁止
-                if app.is_sub_app:
-                    raise FastAPIError('Mounting other sub-apps in a sub-app is prohibited!')
+                if self.is_sub_app:
+                    raise FastAPIError(
+                        f'Mounting [{app.title}] sub-applications into [{self.title}] sub-applications '
+                        f'is prohibited'
+                    )
 
                 self.mount(mount_path, app, app_folder_name)
-                logger.info(f'The sub-app is mounted: {path} -> {app.title}')
+                success_mounted_list.append(app.title)
+                logger.info(f'Successfully mounted the sub-application [{app.title} -> {mount_path}]')
+
+        # 子应用挂载结束
+        logger.info(f'Sub-application mount complete, successfully mounted{success_mounted_list}')
 
     @asynccontextmanager
     async def _application_lifespan(self, app: FastAPI) -> AsyncGenerator[None, None]:
@@ -253,8 +262,5 @@ class Lumary(FastAPI):
         Returns:
              异步生成器
         """
-        if self.is_sub_app and not app.root_path:
-            logger.info('The sub-app is running independently without a root_path')
-
         async with fastapi_lifespan(app, registry=self._hook_registry):
             yield

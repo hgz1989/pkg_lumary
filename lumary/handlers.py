@@ -4,111 +4,168 @@
 @Description: 全局异常处理器
 """
 from logging import getLogger
+from typing import Sequence
 
 from fastapi import FastAPI, Request, status
 from fastapi.exceptions import RequestValidationError, HTTPException
 from fastapi.responses import JSONResponse
+
 from .schemas import response_fail
 
 logger = getLogger(__name__)
 
 
+def _is_json_parse_error(errors: Sequence[dict] | list[dict]) -> bool:
+    """判断是否为 JSON 解析错误而非字段校验错误
+
+    JSON 格式非法时 Pydantic 报错 type='json_invalid'、loc 含整数位置；
+    字段校验失败时 loc 含字段名字符串
+
+    Args:
+        errors: Pydantic 校验错误列表
+
+    Returns:
+        True 表示 JSON 解析错误应返回 400，False 表示字段校验错误应返回 422
+    """
+    for error in errors:
+        err_type = error.get('type', '')
+        if err_type == 'json_invalid':
+            return True
+        loc = error.get('loc', ())
+        if len(loc) >= 2 and isinstance(loc[1], int):
+            return True
+    return False
+
+
+def _build_detail(exc: HTTPException) -> str:
+    """从 HTTPException.detail 中提取可读字符串
+
+    兼容 detail 为 str / list / dict 等情况
+
+    Args:
+        exc: HTTP 异常实例
+
+    Returns:
+        可读的错误详情字符串
+    """
+    detail = exc.detail
+    if isinstance(detail, str):
+        return detail
+    if isinstance(detail, (list, dict)):
+        return str(detail)
+    return str(detail) if detail is not None else ''
+
+
 def setup_exception_handlers(app: FastAPI) -> None:
     """注册全局异常处理器
 
-    将各类异常（业务异常、参数校验、数据库错误、框架内部 HTTP 错误及未知异常）
-    的拦截逻辑挂载到 FastAPI 应用实例上，实现统一响应格式和日志记录
+    按异常类型从具体到通用依次注册，所有异常统一转换为
+    标准 JSON 错误响应格式：{"code": xxx, "message": "...", "data": ...}
+    错误码约定：code = HTTP状态码 * 100（如 404 → 40400）
 
     Args:
         app: 当前运行的 FastAPI 应用实例
     """
-
-    @app.exception_handler(Exception)
-    async def global_exception_handler(_request: Request, exc: Exception) -> JSONResponse:
-        """处理未捕获的全局异常 (兜底方案)
-
-        Args:
-            _request: 当前请求对象（未使用）
-            exc: 异常实例
-
-        Returns:
-            HTTP 500 及统一错误格式的 JSON 响应
-        """
-        logger.critical(f'Global anomalies occur: {exc}', exc_info=True)
-        # 调试模式截取异常信息，避免内容过长
-        err_detail = str(exc)[:300] if app.debug else None
-        # 构建统一错误响应
-        resp = response_fail(
-            code=500,
-            message='System internal errors; please contact your administrator',
-            data=err_detail
-        )
-
-        return JSONResponse(
-            content=resp.model_dump(),
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR
-        )
+    logger.debug(f'[{app.title}] register the global exception handler')
+    # ── 第一层：参数校验异常（RequestValidationError 是 HTTPException 的子类，优先匹配）──
 
     @app.exception_handler(RequestValidationError)
     async def validation_exception_handler(_request: Request, exc: RequestValidationError) -> JSONResponse:
-        """处理 Pydantic 参数校验异常 (HTTP 422)
+        """处理 Pydantic 请求参数校验失败
 
-        当请求体、路径参数或查询参数不符合 Pydantic 模型定义时触发
-        自动提取第一个具体地校验错误信息并拼接，以对用户友好的形式返回
+        JSON 格式非法 → 返回 400；字段校验失败 → 返回 422
+        从 errors 列表中提取首个错误，格式化为用户友好的提示。
+        调试模式下在 data 字段返回完整错误列表供前端排查
 
         Args:
             _request: 当前请求对象（未使用）
             exc: Pydantic 抛出的校验异常实例
 
         Returns:
-            HTTP 400 及格式化后的参数错误信息
+            JSON 解析错误时 HTTP 400，字段校验失败时 HTTP 422
         """
-        # 提取第一个错误的详细信息
         errors = exc.errors()
         if errors:
             first_error = errors[0]
-            loc = ' -> '.join([str(x) for x in first_error.get('loc', [])])
+            loc = ' -> '.join(str(x) for x in first_error.get('loc', []))
             msg = first_error.get('msg', '')
-            error_msg = f'Parameter verification failed: [{loc}] {msg}'
+            error_msg = f'参数校验失败：{loc} {msg}'
         else:
-            error_msg = 'Parameter verification error'
+            error_msg = '参数校验失败'
 
-        logger.error(f'Request validation error: {exc}', exc_info=True)
-        # 调试模式截取异常信息，避免内容过长
-        err_detail = error_msg if app.debug else None
+        # JSON 格式非法（如 {invalid}）→ 400；字段校验失败 → 422
+        if _is_json_parse_error(errors):
+            http_status = status.HTTP_400_BAD_REQUEST
+            business_code = 400
+        else:
+            http_status = status.HTTP_422_UNPROCESSABLE_CONTENT
+            business_code = 422
 
-        # 将参数校验错误转化为内置 HTTP 异常，再交由 http_exception_handler 处理
-        # HTTP 422 Unprocessable Entity
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-            detail=error_msg
+        logger.warning(f'请求参数校验失败: {error_msg}')
+
+        resp = response_fail(
+            code=business_code,
+            message=error_msg
+        )
+        return JSONResponse(
+            content=resp.model_dump(),
+            status_code=http_status,
         )
 
+    # ── 第二层：所有 HTTP 协议异常（400/401/402/403/404/405…）──
     @app.exception_handler(400)
     @app.exception_handler(401)
+    @app.exception_handler(402)
     @app.exception_handler(403)
     @app.exception_handler(404)
     @app.exception_handler(405)
     @app.exception_handler(HTTPException)
     async def http_exception_handler(_request: Request, exc: HTTPException) -> JSONResponse:
-        """处理 FastAPI 内置的 HTTP 异常
+        """统一处理所有 HTTP 层异常
 
-        捕获框架自动抛出或通过 `raise HTTPException` 抛出的错误（如 401 鉴权失败、404 路由不存在）
-        将其重新封装为符合项目规范的 JSON 结构
+        框架自动抛出的 401/403/404/405 以及用户手动 raise HTTPException
+        均由此拦截，按 status_code * 100 计算业务错误码
 
         Args:
             _request: 当前请求对象（未使用）
-            exc: FastAPI 抛出的 HTTP 异常实例
+            exc: FastAPI/Starlette 抛出的 HTTP 异常
 
         Returns:
-            继承原状态码及统一错误格式的 JSON 响应
+            统一格式的 JSON 错误响应，HTTP 状态码与原异常一致
         """
-        logger.error(f'HTTP exception occur: {exc.detail}', exc_info=True)
-        # 调试模式截取异常信息，避免内容过长
-        err_detail = str(exc.detail)[:300] if app.debug else None
+        status_code = exc.status_code
+        detail = _build_detail(exc)
+
+        logger.warning(f'HTTP {status_code}: {detail}')
+
         resp = response_fail(
-            code=exc.status_code * 100,
-            message=str(exc.detail),
-            data=err_detail
+            code=status_code,
+            message=detail[:300]
         )
-        return JSONResponse(resp.model_dump(), status_code=exc.status_code)
+        return JSONResponse(content=resp.model_dump(), status_code=status_code)
+
+    # ── 第三层：未知异常兜底 ──
+
+    @app.exception_handler(Exception)
+    async def global_exception_handler(_request: Request, exc: Exception) -> JSONResponse:
+        """兜底处理器：捕获所有未被上层匹配的未知异常
+
+        记录完整堆栈日志，生产环境对客户端隐藏内部细节
+
+        Args:
+            _request: 当前请求对象（未使用）
+            exc: 未知的 Python 异常实例
+
+        Returns:
+            HTTP 500 + 统一格式的系统错误信息
+        """
+        logger.critical(f'未捕获的系统异常: {type(exc).__name__}: {exc}', exc_info=True)
+
+        resp = response_fail(
+            code=500,
+            message='系统内部错误，请联系管理员'
+        )
+        return JSONResponse(
+            content=resp.model_dump(),
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )

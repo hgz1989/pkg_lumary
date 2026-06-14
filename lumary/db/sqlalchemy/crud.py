@@ -32,7 +32,6 @@ class CRUDBase(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
     提供标准创建、读取、更新、删除操作(仅支持异步)
     子类必须在类级别显式定义 model 属性
     """
-
     model: type[ModelType]
 
     def __init__(self, db: AsyncSession):
@@ -48,6 +47,7 @@ class CRUDBase(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
 
         # 使用 inspect 获取映射列，兼容性更好，同时缓存避免重复计算
         mapper = sa_inspect(self.model)
+
         self.valid_columns = {col.key for col in mapper.mapper.column_attrs}
 
     def _apply_soft_delete_filter(self, stmt: Select) -> Select:
@@ -80,8 +80,10 @@ class CRUDBase(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
         """
         if kwargs:
             invalid_keys = set(kwargs.keys()) - self.valid_columns
+
             if invalid_keys:
                 raise ValueError(f'无效的查询字段: {",".join(invalid_keys)}')
+
             stmt = stmt.filter_by(**kwargs)
 
         return stmt
@@ -119,6 +121,7 @@ class CRUDBase(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
         stmt = select(self.model)
         stmt = self._apply_soft_delete_filter(stmt)
         stmt = self._apply_kwargs_filter(stmt, kwargs)
+
         if options:
             stmt = stmt.options(*options)
 
@@ -229,10 +232,12 @@ class CRUDBase(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
             for obj_in in objs_in:
                 obj_data = obj_in if isinstance(obj_in, dict) else obj_in.model_dump()
                 obj_data = {k: v for k, v in obj_data.items() if k in self.valid_columns}
+
                 db_obj = self.model(**obj_data)
                 db_objs.append(db_obj)
 
             self.db.add_all(db_objs)
+
             if return_objs:
                 await self.db.flush()
 
@@ -241,11 +246,14 @@ class CRUDBase(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
         # 场景 2：忽略错误记录（如某条数据冲突不影响其他数据入库）
         # 这种模式下只能逐条 add + flush 并捕获异常，因为批量 add_all 会导致整个 flush 失败
         successful_objs = []
+
         for obj_in in objs_in:
             obj_data = obj_in if isinstance(obj_in, dict) else obj_in.model_dump()
             obj_data = {k: v for k, v in obj_data.items() if k in self.valid_columns}
+
             db_obj = self.model(**obj_data)
             self.db.add(db_obj)
+
             try:
                 # 必须设置嵌套事务(savepoint)，防止一条报错导致外层主事务处于 invalid 状态
                 async with self.db.begin_nested():
@@ -268,7 +276,6 @@ class CRUDBase(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
             更新后的模型实例
         """
         update_data = obj_in if isinstance(obj_in, dict) else obj_in.model_dump(exclude_unset=True)
-
         update_data = {k: v for k, v in update_data.items() if k in self.valid_columns}
 
         for field, value in update_data.items():

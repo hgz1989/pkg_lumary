@@ -33,26 +33,8 @@ class SchemaBase(BaseModel):
         # 3. 忽略多余字段（安全！前端传多余字段不会报错）
         extra='ignore',
         # 4. 自定义 JSON 编码器（处理 datetime 类型）
-        json_encoders={datetime: lambda v: v.strftime('%Y-%m-%d %H:%M:%S')},
+        json_encoders={datetime: lambda v: v.strftime('%Y-%m-%d %H:%M:%S')}
     )
-
-    # 核心：强制自动排除 None，并在序列化时将 id 提到最前
-    def model_dump(self, **kwargs) -> dict[str, Any]:
-        """重写 model_dump 方法，强制自动排除 None，并在序列化时将 id 提到最前
-
-        Args:
-            **kwargs: 其他参数
-
-        Returns:
-             序列化后的字典数据
-        """
-        kwargs['exclude_none'] = True
-        data = super().model_dump(**kwargs)
-
-        # 在最终输出时，强行将 id 字段排在第一个
-        if 'id' in data:
-            return {'id': data['id'], **{k: v for k, v in data.items() if k != 'id'}}
-        return data
 
 
 class PageQuery(SchemaBase):

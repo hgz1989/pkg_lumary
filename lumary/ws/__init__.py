@@ -4,5 +4,9 @@
 @Description: @Date       : 2026/6/12 
 """
 from .connect_manager import WSConnectionManager
+from .router import WebSocketRouter
 
-__all__ = ['WSConnectionManager']
+__all__ = [
+    'WSConnectionManager',
+    'WebSocketRouter'
+]
