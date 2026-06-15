@@ -282,6 +282,7 @@ class CRUDBase(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
             setattr(db_obj, field, value)
 
         await self.db.flush()
+        await self.db.refresh(db_obj)
         return db_obj
 
     async def soft_delete(self, *, obj_id: Any) -> ModelType:
@@ -300,7 +301,7 @@ class CRUDBase(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
         db_obj.is_deleted = True
         db_obj.deleted_at = func.now()
         await self.db.flush()
-        self.db.expunge(db_obj)
+        await self.db.refresh(db_obj)
         return db_obj
 
     async def restore(self, *, obj_id: Any) -> ModelType:

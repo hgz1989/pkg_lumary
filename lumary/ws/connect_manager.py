@@ -3,6 +3,7 @@
 @CreateDate : 2026/5/14
 @Description: WebSocket 连接管理器
 """
+
 from asyncio import gather
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
@@ -295,3 +296,5 @@ class WSConnectionManager:
 
     def __repr__(self) -> str:
         return f'{self.__class__.__name__}(active={len(self._connections)}, groups={list(self._groups.keys())})'
+
+

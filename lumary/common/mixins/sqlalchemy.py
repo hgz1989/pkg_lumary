@@ -3,6 +3,7 @@
 @CreateDate : 2026/5/14
 @Description: SQLAlchemy 混入类
 """
+
 from datetime import datetime
 
 from sqlalchemy import Boolean, DateTime
@@ -14,6 +15,7 @@ class SoftDeleteMixin:
     为业务模型提供 `is_deleted` 和 `deleted_at` 字段，
     用于实现逻辑删除，以保证数据的完整性和可追溯性
     """
+
     is_deleted: Mapped[bool] = mapped_column(
         Boolean,
         default=False,
@@ -25,3 +27,5 @@ class SoftDeleteMixin:
         nullable=True,
         comment='删除时间'
     )
+
+
