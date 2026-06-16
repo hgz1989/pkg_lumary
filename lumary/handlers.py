@@ -9,51 +9,37 @@ from typing import Sequence
 from fastapi import FastAPI, Request, status
 from fastapi.exceptions import RequestValidationError, HTTPException
 from fastapi.responses import JSONResponse
+from starlette.middleware.errors import ServerErrorMiddleware
 
 from .schemas import response_fail
 
 logger = getLogger(__name__)
 
 
-def _is_json_parse_error(errors: Sequence[dict] | list[dict]) -> bool:
-    """判断是否为 JSON 解析错误而非字段校验错误
+def _is_json_parse_error(errors: list[dict] | Sequence[dict]) -> bool:
+    """判断是否为JSON解析错误而非字段校验错误
 
-    JSON 格式非法时 Pydantic 报错 type='json_invalid'、loc 含整数位置；
+    JSON格式非法时Pydantic报错 type='json_invalid'、loc含整数位置；
     字段校验失败时 loc 含字段名字符串
 
     Args:
-        errors: Pydantic 校验错误列表
+        errors: Pydantic校验错误列表
 
     Returns:
         True 表示 JSON 解析错误应返回 400，False 表示字段校验错误应返回 422
     """
     for error in errors:
         err_type = error.get('type', '')
+
         if err_type == 'json_invalid':
             return True
+
         loc = error.get('loc', ())
+
         if len(loc) >= 2 and isinstance(loc[1], int):
             return True
+
     return False
-
-
-def _build_detail(exc: HTTPException) -> str:
-    """从 HTTPException.detail 中提取可读字符串
-
-    兼容 detail 为 str / list / dict 等情况
-
-    Args:
-        exc: HTTP 异常实例
-
-    Returns:
-        可读的错误详情字符串
-    """
-    detail = exc.detail
-    if isinstance(detail, str):
-        return detail
-    if isinstance(detail, (list, dict)):
-        return str(detail)
-    return str(detail) if detail is not None else ''
 
 
 def setup_exception_handlers(app: FastAPI) -> None:
@@ -67,8 +53,8 @@ def setup_exception_handlers(app: FastAPI) -> None:
         app: 当前运行的 FastAPI 应用实例
     """
     logger.debug(f'[{app.title}] register the global exception handler')
-    # ── 第一层：参数校验异常（RequestValidationError 是 HTTPException 的子类，优先匹配）──
 
+    # ── 第一层：参数校验异常（RequestValidationError 是 HTTPException 的子类，优先匹配）──
     @app.exception_handler(RequestValidationError)
     async def validation_exception_handler(_request: Request, exc: RequestValidationError) -> JSONResponse:
         """处理 Pydantic 请求参数校验失败
@@ -112,42 +98,40 @@ def setup_exception_handlers(app: FastAPI) -> None:
             status_code=http_status,
         )
 
-    # ── 第二层：所有 HTTP 协议异常（400/401/402/403/404/405…）──
-    @app.exception_handler(400)
-    @app.exception_handler(401)
-    @app.exception_handler(402)
-    @app.exception_handler(403)
-    @app.exception_handler(404)
-    @app.exception_handler(405)
-    @app.exception_handler(HTTPException)
-    async def http_exception_handler(_request: Request, exc: HTTPException) -> JSONResponse:
-        """统一处理所有 HTTP 层异常
-
-        框架自动抛出的 401/403/404/405 以及用户手动 raise HTTPException
-        均由此拦截，按 status_code * 100 计算业务错误码
-
-        Args:
-            _request: 当前请求对象（未使用）
-            exc: FastAPI/Starlette 抛出的 HTTP 异常
-
-        Returns:
-            统一格式的 JSON 错误响应，HTTP 状态码与原异常一致
-        """
-        status_code = exc.status_code
-        detail = _build_detail(exc)
-
-        logger.warning(f'HTTP {status_code}: {detail}')
-
-        resp = response_fail(
-            code=status_code,
-            message=detail[:300]
-        )
-        return JSONResponse(content=resp.model_dump(), status_code=status_code)
+    # # ── 第二层：所有 HTTP 协议异常（400/401/402/403/404/405…）──
+    # @app.exception_handler(400)
+    # @app.exception_handler(401)
+    # @app.exception_handler(402)
+    # @app.exception_handler(403)
+    # @app.exception_handler(404)
+    # @app.exception_handler(405)
+    # @app.exception_handler(HTTPException)
+    # async def http_exception_handler(_request: Request, exc: HTTPException) -> JSONResponse:
+    #     """统一处理所有 HTTP 层异常
+    #
+    #     框架自动抛出的 401/403/404/405 以及用户手动 raise HTTPException
+    #     均由此拦截，按 status_code * 100 计算业务错误码
+    #
+    #     Args:
+    #         _request: 当前请求对象（未使用）
+    #         exc: FastAPI/Starlette 抛出的 HTTP 异常
+    #
+    #     Returns:
+    #         统一格式的 JSON 错误响应，HTTP 状态码与原异常一致
+    #     """
+    #     status_code = exc.status_code
+    #
+    #     logger.warning(f'HTTP {status_code}: {detail}')
+    #
+    #     resp = response_fail(
+    #         code=status_code,
+    #         message=detail[:300]
+    #     )
+    #     return JSONResponse(content=resp.model_dump(), status_code=status_code)
 
     # ── 第三层：未知异常兜底 ──
-
     @app.exception_handler(Exception)
-    async def global_exception_handler(_request: Request, exc: Exception) -> JSONResponse:
+    async def exception_handler(_request: Request, exc: Exception) -> JSONResponse:
         """兜底处理器：捕获所有未被上层匹配的未知异常
 
         记录完整堆栈日志，生产环境对客户端隐藏内部细节
@@ -159,13 +143,15 @@ def setup_exception_handlers(app: FastAPI) -> None:
         Returns:
             HTTP 500 + 统一格式的系统错误信息
         """
-        logger.critical(f'未捕获的系统异常: {type(exc).__name__}: {exc}', exc_info=True)
-
+        logger.critical(
+            f'system exceptions not captured exception type:{type(exc).__name__} | error info:{exc}',
+            exc_info=True
+        )
         resp = response_fail(
             code=500,
             message='系统内部错误，请联系管理员'
         )
         return JSONResponse(
             content=resp.model_dump(),
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR
         )

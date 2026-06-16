@@ -11,7 +11,6 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import FastAPI, APIRouter, Request
-from fastapi.exceptions import FastAPIError
 
 from .__version__ import (
     __version__ as lumary_version
@@ -37,7 +36,6 @@ logger = getLogger(__name__)
 _DEFAULT_TERMS_OF_SERVICE = 'https://www.zarkhan.com/terms/'
 _DEFAULT_CONTACT = {'name': 'ZarkHan', 'url': 'https://www.zarkhan.com'}
 _DEFAULT_LICENSE_INFO = {'name': 'MIT', 'url': 'https://opensource.org/licenses/MIT'}
-_IGNORE_DIRS = {'__pycache__', 'tests', 'test', 'utils'}
 
 
 # 应用类
@@ -214,7 +212,7 @@ class Lumary(FastAPI):
 
         apps_folder_name = apps_path.name
 
-        logger.info(f'Starting to mount sub-applications')
+        logger.info('Starting to mount sub-applications')
         success_mounted_list = []
         # 遍历目录
         for path in apps_path.iterdir():
@@ -225,7 +223,7 @@ class Lumary(FastAPI):
             app_folder_name = path.name
 
             # 跳过以下划线/点开头 或 在忽略列表中的目录
-            if app_folder_name.startswith(('_', '.')) or (app_folder_name in _IGNORE_DIRS):
+            if app_folder_name.startswith(('_', '.', '#', '~')):
                 continue
 
             # 构建模块路径和变量名
@@ -240,7 +238,7 @@ class Lumary(FastAPI):
             if app is not None:
                 # 如果当前实例是子应用 → 直接报错禁止
                 if self.is_sub_app:
-                    raise FastAPIError(
+                    raise RuntimeError(
                         f'Mounting [{app.title}] sub-applications into [{self.title}] sub-applications '
                         f'is prohibited'
                     )

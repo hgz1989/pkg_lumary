@@ -43,14 +43,14 @@ class SessionFactory:
             服务类实例
         """
 
-        async def dependency() -> T:
+        async def dependency() -> AsyncGenerator[T, None]:
             """生成服务依赖的工厂方法
 
             Returns:
                 服务类实例
             """
             async with self.get_session() as db:
-                return service_cls(db=db)
+                yield service_cls(db=db)
 
         dependency.__name__ = f'{service_cls.__name__}Service'
         dependency.__doc__ = f'自动注入 {service_cls.__name__}'

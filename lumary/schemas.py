@@ -5,7 +5,8 @@
 """
 from collections.abc import Sequence
 from datetime import datetime
-from typing import TypeVar, Any, Generic
+from typing import TypeVar, Generic, Any, TypeAlias
+from uuid import UUID
 
 from pydantic import (
     BaseModel,
@@ -16,8 +17,10 @@ from pydantic import (
 from .__version__ import (
     __version__ as lumary_version
 )
+from .common import get_request_id
 
 T = TypeVar('T')
+E = TypeVar('E')  # 扩展结构体
 
 
 class SchemaBase(BaseModel):
@@ -56,23 +59,25 @@ class KeywordQuery(SchemaBase):
 
 class BatchIds(SchemaBase):
     """通用批量操作参数（如批量删除/更新）"""
-    ids: list[int] | list[str] = Field(..., description='ID 列表', min_length=1)
+    ids: list[int] | list[str] = Field(..., description='ID列表', min_length=1)
 
 
-class APIResponse(SchemaBase, Generic[T]):
-    """响应结构基础模型"""
+class APIExtendedResponse(SchemaBase, Generic[T, E]):
+    """通用扩展响应结构基础模型 """
+    request_id: UUID = Field(description='请求唯一追踪ID')
     code: int = Field(default=0, description='状态码，0为成功，其他为错误')
     message: str = Field(default='Success', description='提示信息')
     data: T | None = Field(default=None, description='响应数据')
+    extra: E | None = Field(default=None, description='结构化扩展信息')
 
 
 class PageData(SchemaBase, Generic[T]):
     """通用分页响应数据（全量信息）"""
-    total: int = Field(default=0, description='总记录数')
+    items: list[T] | Sequence[T] = Field(default_factory=list, description='当前页数据列表')
+    page: int = Field(default=1, description='当前页码')
     size: int = Field(default=10, description='每页数量')
     pages: int = Field(default=0, description='总页数')
-    page: int = Field(default=1, description='当前页码')
-    items: Sequence[T] | list[T] = Field(default_factory=list, description='当前页数据列表')
+    total: int = Field(default=0, description='总记录数')
 
 
 class SystemHealthOut(SchemaBase):
@@ -81,6 +86,46 @@ class SystemHealthOut(SchemaBase):
     name: str = Field(default='Lumary', description='系统名称')
     version: str = Field(default=lumary_version, description='系统版本')
     debug: bool = Field(default=False, description='是否处于调试模式')
+
+
+class EmptyExtra(SchemaBase):
+    """空扩展占位模型，作为 E 的默认类型"""
+    pass
+
+
+# 兼容旧版 TypeAlias 写法
+APIResponse: TypeAlias = APIExtendedResponse[T, EmptyExtra]
+
+
+def _response(
+        code: int | None = None,
+        message: str | None = None,
+        data: T | None = None
+) -> APIResponse[T]:
+    """返回通用响应
+
+    Args:
+        code: 状态码
+        message: 提示信息
+        data: 响应数据
+
+    Returns:
+        APIResponse[T]
+    """
+    kwargs: dict[str, Any] = {
+        'request_id': get_request_id()
+    }
+
+    if code is not None:
+        kwargs['code'] = code
+
+    if message is not None:
+        kwargs['message'] = message
+
+    if data is not None:
+        kwargs['data'] = data
+
+    return APIResponse(**kwargs)
 
 
 def response_success(
@@ -93,16 +138,14 @@ def response_success(
         data: 响应数据
         message: 提示信息
     """
-    kwargs = {}
-    if message is not None:
-        kwargs['message'] = message
-    if data is not None:
-        kwargs['data'] = data
-
-    return APIResponse(**kwargs)
+    return _response(code=0, message=message, data=data)
 
 
-def response_fail(code: int, message: str = 'Fail', data: T | None = None) -> APIResponse[T]:
+def response_fail(
+        code: int,
+        message: str = 'Fail',
+        data: T | None = None
+) -> APIResponse[T]:
     """返回失败响应
 
     Args:
@@ -110,10 +153,4 @@ def response_fail(code: int, message: str = 'Fail', data: T | None = None) -> AP
         message: 错误信息
         data: 附加错误数据
     """
-    kwargs = {}
-    if message is not None:
-        kwargs['message'] = message
-    if data is not None:
-        kwargs['data'] = data
-
-    return APIResponse(code=code, **kwargs)
+    return _response(code=code, message=message, data=data)

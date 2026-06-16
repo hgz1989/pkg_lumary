@@ -1,22 +1,24 @@
 """
 @Author     : zarkhan
-@CreateDate : 2026/5/14
-@Description: 
+@Date       : 2026/6/16
+@Description:
 """
+from lumary import Lumary, APIResponse
 
-from pathlib import Path
+app = Lumary(debug=True)
 
-from lumary import Lumary
+@app.get('/aaaa')
+async def index()->APIResponse[str]:
+    """首页
 
-root_dir = Path(__file__).resolve().parent.parent
+    Returns:
 
-app = Lumary(debug=True, root_path='/api')
+    """
+    print('aaaa')
+    raise ValueError('只要开心')
 
-app.mount_sub_apps(root_dir / 'tests' / 'apps')
 
 if __name__ == '__main__':
     import uvicorn
 
-    uvicorn.run(app, host='0.0.0.0', port=8000, log_config=None)
-
-
+    uvicorn.run(app, host='127.0.0.1', port=8000)

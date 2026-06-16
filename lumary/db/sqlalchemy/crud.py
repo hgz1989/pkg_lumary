@@ -202,13 +202,7 @@ class CRUDBase(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
         if not db_obj:
             db_obj = await self.get(obj_id)
 
-            # 如果对象不存在，直接抛出明确异常
-            if db_obj is None:
-                raise NoResultFound(f'{self.model.__name__}记录不存在: id={obj_id}')
-
-        if db_obj:
-            await self.db.delete(db_obj)
-
+        await self.db.delete(db_obj)
         return db_obj
 
     async def update(self, *, db_obj: ModelType, obj_in: UpdateSchemaType | dict[str, Any]) -> ModelType:

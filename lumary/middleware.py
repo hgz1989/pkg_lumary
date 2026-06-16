@@ -4,20 +4,24 @@
 @Description: 应用中间件配置
 """
 from logging import getLogger
+from typing import Callable, Awaitable
+from uuid import uuid4
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
+
+from .common import set_request_id, request_id_ctx_var
 
 logger = getLogger(__name__)
 
 
 def setup_middlewares(
-    app: FastAPI,
-    *,
-    enable_cors: bool,
-    allow_origins: list[str] | None = None,
-    allow_methods: list[str] | None = None,
-    allow_headers: list[str] | None = None,
+        app: FastAPI,
+        *,
+        enable_cors: bool,
+        allow_origins: list[str] | None = None,
+        allow_methods: list[str] | None = None,
+        allow_headers: list[str] | None = None,
 ) -> None:
     """注册全局中间件
 
@@ -44,3 +48,28 @@ def setup_middlewares(
             allow_headers=allow_headers or ['*'],
         )
         logger.info(f'[{app.title}] Cross-Origin Resource Sharing enabled')
+
+    # 保留你原来的内联中间件写法，仅加 try/finally 重置上下文
+    @app.middleware('http')
+    async def request_id_middleware(
+            request: Request,
+            call_next: Callable[[Request], Awaitable[Response]]
+    ) -> Response:
+        """ 添加请求ID
+
+        Args:
+            request: 当前请求对象
+            call_next: 下一个中间件或目标应用
+
+        Returns:
+            响应对象
+        """
+        request_id = request.headers.get('X-Request-ID') or str(uuid4())
+        token = set_request_id(request_id)
+        try:
+            response = await call_next(request)
+            response.headers['X-Request-ID'] = request_id
+            return response
+        finally:
+            # 关键：清除上下文，防止不同请求ID串数据
+            request_id_ctx_var.reset(token)
