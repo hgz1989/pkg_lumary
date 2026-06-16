@@ -11,20 +11,47 @@ from logging.handlers import (
 )
 from pathlib import Path
 
-# 日志格式定义
-NORMAL_FORMAT = '%(asctime)s | %(levelname)-8s | %(name)-50.50s | %(lineno)4d | %(message)s'
+from .context import get_request_id
 
-# 配置日志格式
-logging.basicConfig(level=logging.DEBUG, format=NORMAL_FORMAT, force=True)
+# 日志格式定义
+NORMAL_FORMAT = '%(asctime)s | %(levelname)-8s | %(request_id)-36s | %(name)-50.50s | %(lineno)4d | %(message)s'
+
+# 全局注入 request_id 到日志记录
+old_factory = logging.getLogRecordFactory()
+
+
+def _record_factory(*args, **kwargs):
+    record = old_factory(*args, **kwargs)
+    record.request_id = get_request_id() or '-'
+    return record
+
+
+logging.setLogRecordFactory(_record_factory)
+
+
+# 【新增：日志过滤器，统一 uvicorn.error / uvicorn.access 的名称为 uvicorn】
+class UvicornNameRewriteFilter(logging.Filter):
+    def filter(self, record: logging.LogRecord) -> bool:
+        # 把 uvicorn.error / uvicorn.access 的日志名称统一改成 uvicorn
+        if record.name in ("uvicorn.error", "uvicorn.access"):
+            record.name = "uvicorn"
+        return True
+
 
 # 强制接管 uvicorn 的所有日志（核心！）
-uvicorn_logger_names = ['uvicorn', 'uvicorn.error', 'uvicorn.access', 'fastapi', 'httpx']
+only_takeover  = ['uvicorn', 'uvicorn.access', 'uvicorn.error', 'fastapi']
 
-for logger_name in uvicorn_logger_names:
+for logger_name in only_takeover:
     logger = logging.getLogger(logger_name)
     logger.handlers.clear()  # 清空默认处理器
     logger.propagate = True  # 让它走根日志
     logger.setLevel(logging.INFO)  # 屏蔽外部库的 DEBUG 日志，最低只输出 INFO
+    # 给 error / access 附加名称重写过滤器
+    if logger_name in ('uvicorn.error', 'uvicorn.access'):
+        logger.addFilter(UvicornNameRewriteFilter())
+
+# 配置日志格式
+logging.basicConfig(level=logging.DEBUG, format=NORMAL_FORMAT, force=True)
 
 
 # 方法1：动态修改全局日志级别
@@ -61,12 +88,12 @@ def set_log_format(log_format: str) -> None:
 
 # 方法3：配置应用日志
 def setup_logger(
-    log_dir: str | Path | None = None,
-    filename: str = 'app.log',
-    when: str = 'midnight',
-    backup_count: int = 30,
-    encoding: str = 'utf-8',
-    enable_console: bool = True,
+        log_dir: str | Path | None = None,
+        filename: str = 'app.log',
+        when: str = 'midnight',
+        backup_count: int = 30,
+        encoding: str = 'utf-8',
+        enable_console: bool = True,
 ) -> None:
     """一键配置应用的日志（支持控制台开关与文件日志）
 
@@ -128,5 +155,3 @@ def setup_logger(
             )
             file_handler.setFormatter(current_formatter)
             root_logger.addHandler(file_handler)
-
-

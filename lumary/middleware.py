@@ -5,12 +5,15 @@
 """
 from logging import getLogger
 from typing import Callable, Awaitable
-from uuid import uuid4
 
 from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 
-from .common import set_request_id, request_id_ctx_var
+from .common import (
+    generate_request_id,
+    set_request_id,
+    request_id_ctx_var
+)
 
 logger = getLogger(__name__)
 
@@ -64,7 +67,7 @@ def setup_middlewares(
         Returns:
             响应对象
         """
-        request_id = request.headers.get('X-Request-ID') or str(uuid4())
+        request_id = request.headers.get('X-Request-ID') or generate_request_id()
         token = set_request_id(request_id)
         try:
             response = await call_next(request)

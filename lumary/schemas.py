@@ -4,7 +4,7 @@
 @Description: 核心响应与请求数据模型
 """
 from datetime import datetime
-from typing import TypeVar, Generic, Sequence, Any, TypeAlias
+from typing import TypeVar, Generic, Sequence, Any
 from uuid import UUID
 
 from pydantic import (
@@ -12,6 +12,7 @@ from pydantic import (
     ConfigDict,
     Field
 )
+from pydantic.json_schema import SkipJsonSchema
 
 from .__version__ import (
     __version__ as lumary_version
@@ -61,15 +62,6 @@ class BatchIds(SchemaBase):
     ids: list[int] | list[str] = Field(..., description='ID列表', min_length=1)
 
 
-class APIExtendedResponse(SchemaBase, Generic[T, E]):
-    """通用扩展响应结构基础模型 """
-    request_id: UUID = Field(description='请求唯一追踪ID')
-    code: int = Field(default=0, description='状态码，0为成功，其他为错误')
-    message: str = Field(default='Success', description='提示信息')
-    data: T | None = Field(default=None, description='响应数据')
-    extra: E | None = Field(default=None, description='结构化扩展信息')
-
-
 class PageData(SchemaBase, Generic[T]):
     """通用分页响应数据（全量信息）"""
     items: list[T] | Sequence[T] = Field(default_factory=list, description='当前页数据列表')
@@ -87,20 +79,32 @@ class SystemHealthOut(SchemaBase):
     debug: bool = Field(default=False, description='是否处于调试模式')
 
 
-class EmptyExtra(SchemaBase):
-    """空扩展占位模型，作为 E 的默认类型"""
-    pass
+# 底层基础双泛型响应（统一公共字段）
+class APIResponseBase(SchemaBase):
+    """底层基础响应，同时承载 data + extra 两套泛型"""
+    request_id: UUID = Field(description='请求唯一追踪ID')
+    code: int = Field(default=0, description='状态码，0为成功，其他为错误')
+    message: str = Field(default='Success', description='提示信息')
 
 
-# 兼容旧版 TypeAlias 写法
-APIResponse: TypeAlias = APIExtendedResponse[T, EmptyExtra]
+# 场景1：仅返回data，无自定义扩展（绝大多数普通接口）
+class APIResponse(APIResponseBase, Generic[T]):
+    """仅携带业务数据的通用响应, T为业务数据类型"""
+    data: T | None = Field(default=None, description='业务主体响应数据')
+
+
+# 场景2：携带data + 自定义extra扩展（分页、统计等特殊接口）
+class APIResponseWithExtra(APIResponseBase, Generic[T, E]):
+    """携带业务数据+自定义结构化扩展的响应, T为业务数据类型，E为扩展数据类型"""
+    data: T | None = Field(default=None, description='业务主体响应数据')
+    extra: E | None = Field(default=None, description='自定义扩展信息')
 
 
 def _response(
         code: int | None = None,
         message: str | None = None,
         data: T | None = None
-) -> APIResponse[T]:
+) -> APIResponse[T] | APIResponseWithExtra[T, E]:
     """返回通用响应
 
     Args:
@@ -130,7 +134,7 @@ def _response(
 def response_success(
         message: str | None = None,
         data: T | None = None
-) -> APIResponse[T]:
+) -> APIResponse[T] | APIResponseWithExtra[T, E]:
     """返回成功响应
 
     Args:
@@ -144,7 +148,7 @@ def response_fail(
         code: int,
         message: str = 'Fail',
         data: T | None = None
-) -> APIResponse[T]:
+) -> APIResponse[T] | APIResponseWithExtra[T, E]:
     """返回失败响应
 
     Args:
