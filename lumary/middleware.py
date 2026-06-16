@@ -4,18 +4,62 @@
 @Description: 应用中间件配置
 """
 from logging import getLogger
-from typing import Callable, Awaitable
+from typing import Awaitable, Callable
 
-from fastapi import FastAPI, Request, Response
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
-from .common import (
-    generate_request_id,
-    set_request_id,
-    request_id_ctx_var
-)
+from .common import generate_request_id, set_request_id
 
 logger = getLogger(__name__)
+
+
+class RequestIdMiddleware:
+    """纯 ASGI request_id 中间件
+
+    与 BaseHTTPMiddleware 不同，此中间件直接操作 ASGI 协议，
+    在同一上下文中运行，确保 uvicorn.access 等日志能获取到 request_id。
+
+    每次请求写入 ContextVar，不做 reset：
+    - uvicorn.access 日志在中间件返回**之后**才发出，reset 会导致 request_id 丢失
+    - 下一个请求会自动覆盖旧值，不存在串数据风险
+    """
+
+    def __init__(self, app: ASGIApp) -> None:
+        self.app = app
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope['type'] not in ('http', 'websocket'):
+            await self.app(scope, receive, send)
+            return
+
+        # 从请求头提取或自动生成 request_id
+        headers_list = scope.get('headers', [])
+        request_id = None
+        for key, value in headers_list:
+            if key == b'x-request-id':
+                request_id = value.decode('utf-8')
+                break
+        if not request_id:
+            request_id = generate_request_id()
+
+        # 写入上下文变量（不做 reset，让值持续到 uvicorn.access 输出）
+        set_request_id(request_id)
+
+        if scope['type'] == 'http':
+            # HTTP 请求：拦截 send，把 X-Request-ID 写入响应头
+            async def send_with_request_id(message: Message) -> None:
+                if message['type'] == 'http.response.start':
+                    headers = list(message.get('headers', []))
+                    headers.append((b'x-request-id', request_id.encode('utf-8')))
+                    message = {**message, 'headers': headers}
+                await send(message)
+
+            await self.app(scope, receive, send_with_request_id)
+        else:
+            # WebSocket 请求：仅设置上下文，不注入响应头
+            await self.app(scope, receive, send)
 
 
 def setup_middlewares(
@@ -37,6 +81,9 @@ def setup_middlewares(
         allow_methods: 允许的方法列表
         allow_headers: 允许的头列表
     """
+    # 纯 ASGI request_id 中间件（必须放在最外层，最先执行）
+    app.add_middleware(RequestIdMiddleware)
+
     # 动态 CORS 跨域（根据配置开启）
     if enable_cors:
         origins = allow_origins or ['*']
@@ -51,28 +98,3 @@ def setup_middlewares(
             allow_headers=allow_headers or ['*'],
         )
         logger.info(f'[{app.title}] Cross-Origin Resource Sharing enabled')
-
-    # 保留你原来的内联中间件写法，仅加 try/finally 重置上下文
-    @app.middleware('http')
-    async def request_id_middleware(
-            request: Request,
-            call_next: Callable[[Request], Awaitable[Response]]
-    ) -> Response:
-        """ 添加请求ID
-
-        Args:
-            request: 当前请求对象
-            call_next: 下一个中间件或目标应用
-
-        Returns:
-            响应对象
-        """
-        request_id = request.headers.get('X-Request-ID') or generate_request_id()
-        token = set_request_id(request_id)
-        try:
-            response = await call_next(request)
-            response.headers['X-Request-ID'] = request_id
-            return response
-        finally:
-            # 关键：清除上下文，防止不同请求ID串数据
-            request_id_ctx_var.reset(token)

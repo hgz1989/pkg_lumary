@@ -12,7 +12,6 @@ from pydantic import (
     ConfigDict,
     Field
 )
-from pydantic.json_schema import SkipJsonSchema
 
 from .__version__ import (
     __version__ as lumary_version
@@ -62,6 +61,14 @@ class BatchIds(SchemaBase):
     ids: list[int] | list[str] = Field(..., description='ID列表', min_length=1)
 
 
+class SystemHealthOut(SchemaBase):
+    """系统健康检查输出"""
+    status: str = Field(default='OK', description='系统状态')
+    name: str = Field(default='Lumary', description='系统名称')
+    version: str = Field(default=lumary_version, description='系统版本')
+    debug: bool = Field(default=False, description='是否处于调试模式')
+
+
 class PageData(SchemaBase, Generic[T]):
     """通用分页响应数据（全量信息）"""
     items: list[T] | Sequence[T] = Field(default_factory=list, description='当前页数据列表')
@@ -71,7 +78,6 @@ class PageData(SchemaBase, Generic[T]):
     total: int = Field(default=0, description='总记录数')
 
 
-# 底层基础双泛型响应（统一公共字段）
 class APIResponseBase(SchemaBase):
     """底层基础响应，同时承载 data + extra 两套泛型"""
     request_id: UUID = Field(description='请求唯一追踪ID')
@@ -79,13 +85,11 @@ class APIResponseBase(SchemaBase):
     message: str = Field(default='Success', description='提示信息')
 
 
-# 场景1：仅返回data，无自定义扩展（绝大多数普通接口）
 class APIResponse(APIResponseBase, Generic[T]):
     """仅携带业务数据的通用响应, T为业务数据类型"""
     data: T | None = Field(default=None, description='业务主体响应数据')
 
 
-# 场景2：携带data + 自定义extra扩展（分页、统计等特殊接口）
 class APIResponseWithExtra(APIResponseBase, Generic[T, E]):
     """携带业务数据+自定义结构化扩展的响应, T为业务数据类型，E为扩展数据类型"""
     data: T | None = Field(default=None, description='业务主体响应数据')
@@ -96,7 +100,7 @@ def _response(
         code: int | None = None,
         message: str | None = None,
         data: T | None = None
-) -> APIResponse[T] | APIResponseWithExtra[T, E]:
+) -> APIResponse[T]:
     """返回通用响应
 
     Args:
@@ -126,12 +130,15 @@ def _response(
 def response_success(
         message: str | None = None,
         data: T | None = None
-) -> APIResponse[T] | APIResponseWithExtra[T, E]:
+) -> APIResponse[T]:
     """返回成功响应
 
     Args:
         data: 响应数据
         message: 提示信息
+
+    Returns:
+        APIResponse[T]
     """
     return _response(code=0, message=message, data=data)
 
@@ -140,12 +147,88 @@ def response_fail(
         code: int,
         message: str = 'Fail',
         data: T | None = None
-) -> APIResponse[T] | APIResponseWithExtra[T, E]:
+) -> APIResponse[T]:
     """返回失败响应
 
     Args:
         code: 错误码
         message: 错误信息
         data: 附加错误数据
+    Returns:
+        APIResponse[T]
     """
     return _response(code=code, message=message, data=data)
+
+
+def _response_with_extra(
+        code: int | None = None,
+        message: str | None = None,
+        data: T | None = None,
+        extra: E | None = None
+) -> APIResponseWithExtra[T, E]:
+    """返回携带扩展数据的响应
+
+    Args:
+        code: 状态码
+        message: 提示信息
+        data: 响应数据
+        extra: 扩展数据
+
+    Returns:
+        APIResponseWithExtra[T, E]
+    """
+    kwargs: dict[str, Any] = {
+        'request_id': get_request_id()
+    }
+
+    if code is not None:
+        kwargs['code'] = code
+
+    if message:
+        kwargs['message'] = message
+
+    if data is not None:
+        kwargs['data'] = data
+
+    if extra is not None:
+        kwargs['extra'] = extra
+
+    return APIResponseWithExtra(**kwargs)
+
+
+def response_with_extra_success(
+        message: str | None = None,
+        data: T | None = None,
+        extra: E | None = None
+) -> APIResponseWithExtra[T, E]:
+    """返回携带扩展数据的成功响应
+
+    Args:
+       message: 提示信息
+       data: 响应数据
+       extra: 扩展数据
+
+    Returns:
+        APIResponseWithExtra[T, E]
+    """
+    return _response_with_extra(message=message, data=data, extra=extra)
+
+
+def response_with_extra_fail(
+        code: int,
+        message: str | None = None,
+        data: T | None = None,
+        extra: E | None = None
+) -> APIResponseWithExtra[T, E]:
+    """返回携带扩展数据的失败响应
+
+    Args:
+        code: 错误码
+        message: 错误信息
+        data: 附加错误数据
+        extra: 扩展数据
+
+    Returns:
+        APIResponseWithExtra[T, E]
+    """
+    return _response_with_extra(code=code, message=message, data=data, extra=extra)

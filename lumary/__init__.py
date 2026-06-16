@@ -76,7 +76,9 @@ from .schemas import (
     APIResponse,
     APIResponseWithExtra,
     response_success,
-    response_fail
+    response_fail,
+    response_with_extra_success,
+    response_with_extra_fail
 )
 
 __all__ = [
@@ -144,10 +146,11 @@ __all__ = [
     'TimeRangeQuery',
     'KeywordQuery',
     'BatchIds',
-    'APIResponse',
     'PageData',
     'APIResponse',
     'APIResponseWithExtra',
     'response_success',
-    'response_fail'
+    'response_fail',
+    'response_with_extra_success',
+    'response_with_extra_fail'
 ]

@@ -11,7 +11,6 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import FastAPI, APIRouter, Request
-from pydantic import Field
 
 from .__version__ import (
     __version__ as lumary_version
@@ -26,7 +25,7 @@ from .lifespan import (
 from .middleware import setup_middlewares
 from .openapi import setup_custom_openapi
 from .schemas import (
-    SchemaBase,
+    SystemHealthOut,
     APIResponse,
     response_success
 )
@@ -37,14 +36,6 @@ logger = getLogger(__name__)
 _DEFAULT_TERMS_OF_SERVICE = 'https://www.zarkhan.com/terms/'
 _DEFAULT_CONTACT = {'name': 'ZarkHan', 'url': 'https://www.zarkhan.com'}
 _DEFAULT_LICENSE_INFO = {'name': 'MIT', 'url': 'https://opensource.org/licenses/MIT'}
-
-
-class SystemHealthOut(SchemaBase):
-    """系统健康检查输出"""
-    status: str = Field(default='OK', description='系统状态')
-    name: str = Field(default='Lumary', description='系统名称')
-    version: str = Field(default=lumary_version, description='系统版本')
-    debug: bool = Field(default=False, description='是否处于调试模式')
 
 
 # 应用类
