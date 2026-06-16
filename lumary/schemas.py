@@ -71,14 +71,6 @@ class PageData(SchemaBase, Generic[T]):
     total: int = Field(default=0, description='总记录数')
 
 
-class SystemHealthOut(SchemaBase):
-    """系统健康检查输出"""
-    status: str = Field(default='OK', description='系统状态')
-    name: str = Field(default='Lumary', description='系统名称')
-    version: str = Field(default=lumary_version, description='系统版本')
-    debug: bool = Field(default=False, description='是否处于调试模式')
-
-
 # 底层基础双泛型响应（统一公共字段）
 class APIResponseBase(SchemaBase):
     """底层基础响应，同时承载 data + extra 两套泛型"""
