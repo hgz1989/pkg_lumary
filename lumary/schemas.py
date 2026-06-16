@@ -3,9 +3,8 @@
 @CreateDate : 2026/5/14
 @Description: 核心响应与请求数据模型
 """
-from collections.abc import Sequence
 from datetime import datetime
-from typing import TypeVar, Generic, Any, TypeAlias
+from typing import TypeVar, Generic, Sequence, Any, TypeAlias
 from uuid import UUID
 
 from pydantic import (
