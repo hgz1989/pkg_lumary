@@ -5,7 +5,6 @@
 """
 from datetime import datetime
 from typing import TypeVar, Generic, Sequence, Any
-from uuid import UUID
 
 from pydantic import (
     BaseModel,
@@ -35,7 +34,9 @@ class SchemaBase(BaseModel):
         # 3. 忽略多余字段（安全！前端传多余字段不会报错）
         extra='ignore',
         # 4. 自定义 JSON 编码器（处理 datetime 类型）
-        json_encoders={datetime: lambda v: v.strftime('%Y-%m-%d %H:%M:%S')}
+        json_encoders={
+            datetime: lambda v: v.strftime('%Y-%m-%d %H:%M:%S'),
+        }
     )
 
 
@@ -80,7 +81,7 @@ class PageData(SchemaBase, Generic[T]):
 
 class APIResponseBase(SchemaBase):
     """底层基础响应，同时承载 data + extra 两套泛型"""
-    request_id: UUID = Field(description='请求唯一追踪ID')
+    request_id: str = Field(description='请求唯一追踪ID')
     code: int = Field(default=0, description='状态码，0为成功，其他为错误')
     message: str = Field(default='Success', description='提示信息')
 

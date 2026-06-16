@@ -124,11 +124,6 @@ class Lumary(FastAPI):
         # 设置自定义文档
         setup_custom_openapi(self)
 
-        # 如果不是子应用
-        if not is_sub_app:
-            # 注册系统内置接口
-            self._register_system_endpoints()
-
         # 设置中间件（主应用和子应用都需要注册，FastAPI 挂载机制中，子应用的中间件会优先于主应用触发）
         setup_middlewares(
             self,
@@ -140,6 +135,12 @@ class Lumary(FastAPI):
 
         # 设置异常处理（主应用和子应用都需要独立注册异常处理器，否则子应用路由抛错无法被捕获）
         setup_exception_handlers(self)
+
+        # 如果不是子应用
+        if not is_sub_app:
+            # 注册系统内置接口
+            self._register_system_endpoints()
+
 
     def _register_system_endpoints(self) -> None:
         """注册系统内置接口（健康检查、指标等）"""

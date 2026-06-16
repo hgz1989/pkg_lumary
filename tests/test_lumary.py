@@ -5,7 +5,7 @@
 """
 from lumary import Lumary, SchemaBase, APIResponse, response_success, APIResponseWithExtra, response_with_extra_success
 
-app = Lumary(debug=True)
+app = Lumary(debug=False)
 
 
 class User(SchemaBase):
@@ -29,14 +29,14 @@ async def index() -> APIResponse[User]:
     return response_success(data=resp)
 
 
-@app.get('/tenant')
-async def tenant() -> APIResponseWithExtra[User, Tenant]:
+@app.post('/tenant')
+async def tenant(user:User) -> APIResponseWithExtra[User, Tenant]:
     """租户
 
     Returns:
 
     """
-    resp = User(name='lumary', age=18)
+    resp = user
     extra = Tenant(name='lumary', age=18)
     return response_with_extra_success(data=resp, extra=extra)
 

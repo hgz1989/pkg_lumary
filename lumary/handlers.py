@@ -7,7 +7,7 @@ from logging import getLogger
 from typing import Sequence
 
 from fastapi import FastAPI, Request, status
-from fastapi.exceptions import RequestValidationError
+from fastapi.exceptions import RequestValidationError, HTTPException
 from fastapi.responses import JSONResponse
 
 
@@ -95,39 +95,33 @@ def setup_exception_handlers(app: FastAPI) -> None:
         )
         return JSONResponse(
             content=resp.model_dump(),
-            status_code=http_status,
+            status_code=http_status
         )
 
-    # # ── 第二层：所有 HTTP 协议异常（400/401/402/403/404/405…）──
-    # @app.exception_handler(400)
-    # @app.exception_handler(401)
-    # @app.exception_handler(402)
-    # @app.exception_handler(403)
-    # @app.exception_handler(404)
-    # @app.exception_handler(405)
-    # @app.exception_handler(HTTPException)
-    # async def http_exception_handler(_request: Request, exc: HTTPException) -> JSONResponse:
-    #     """统一处理所有 HTTP 层异常
-    #
-    #     框架自动抛出的 401/403/404/405 以及用户手动 raise HTTPException
-    #     均由此拦截，按 status_code * 100 计算业务错误码
-    #
-    #     Args:
-    #         _request: 当前请求对象（未使用）
-    #         exc: FastAPI/Starlette 抛出的 HTTP 异常
-    #
-    #     Returns:
-    #         统一格式的 JSON 错误响应，HTTP 状态码与原异常一致
-    #     """
-    #     status_code = exc.status_code
-    #
-    #     logger.warning(f'HTTP {status_code}: {detail}')
-    #
-    #     resp = response_fail(
-    #         code=status_code,
-    #         message=detail[:300]
-    #     )
-    #     return JSONResponse(content=resp.model_dump(), status_code=status_code)
+    # # ── 第二层：所有 HTTP 协议异常──
+    @app.exception_handler(HTTPException)
+    async def http_exception_handler(_request: Request, exc: HTTPException) -> JSONResponse:
+        """统一处理所有 HTTP 层异常
+
+        框架自动抛出的 401/403/404/405 以及用户手动 raise HTTPException
+        均由此拦截，按 status_code * 100 计算业务错误码
+
+        Args:
+            _request: 当前请求对象（未使用）
+            exc: FastAPI/Starlette 抛出的 HTTP 异常
+
+        Returns:
+            统一格式的 JSON 错误响应，HTTP 状态码与原异常一致
+        """
+        status_code = exc.status_code
+
+        logger.warning(f'HTTP {status_code}: {exc.detail}')
+
+        resp = response_fail(
+            code=status_code,
+            message=str(exc.detail)
+        )
+        return JSONResponse(content=resp.model_dump(), status_code=status_code)
 
     # ── 第三层：未知异常兜底 ──
     @app.exception_handler(Exception)
