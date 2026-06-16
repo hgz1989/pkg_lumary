@@ -4,7 +4,6 @@
 @Description: 应用中间件配置
 """
 from logging import getLogger
-from typing import Awaitable, Callable
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
