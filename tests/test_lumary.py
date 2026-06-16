@@ -3,7 +3,7 @@
 @Date       : 2026/6/16
 @Description:
 """
-from lumary import Lumary, SchemaBase, APIResponse, response_success, APIResponseWithExtra
+from lumary import Lumary, SchemaBase, APIResponse, response_success, APIResponseWithExtra, response_with_extra_success
 
 app = Lumary(debug=True)
 
@@ -38,7 +38,7 @@ async def tenant() -> APIResponseWithExtra[User, Tenant]:
     """
     resp = User(name='lumary', age=18)
     extra = Tenant(name='lumary', age=18)
-    return response_success(data=resp, extra=extra)
+    return response_with_extra_success(data=resp, extra=extra)
 
 
 if __name__ == '__main__':
