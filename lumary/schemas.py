@@ -33,7 +33,6 @@ class SchemaBase(BaseModel):
 
         # ✅ 4. 允许任意类型（支持泛型绑定 ORM 模型等）
         arbitrary_types_allowed=True,
-
         # ✅ 5. 自定义 JSON 编码器（处理 datetime 类型）
         json_encoders={
             datetime: lambda v: v.strftime('%Y-%m-%d %H:%M:%S')
