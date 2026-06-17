@@ -7,15 +7,9 @@ from datetime import datetime
 from math import ceil
 from typing import TypeVar, Generic, Sequence, Any
 
-from pydantic import (
-    BaseModel,
-    ConfigDict,
-    Field
-)
+from pydantic import BaseModel, ConfigDict, Field
 
-from .__version__ import (
-    __version__ as lumary_version
-)
+from .__version__ import __version__ as lumary_version
 from .common import get_request_id
 
 T = TypeVar('T')
@@ -47,19 +41,19 @@ class SchemaBase(BaseModel):
     )
 
 
-class PageQuery(SchemaBase):
+class PageParams(SchemaBase):
     """通用分页请求参数（适用于后台管理系统）"""
     page: int = Field(default=1, description='当前页码', ge=1)
     size: int = Field(default=100, description='每页数量', ge=1, le=1000)
 
 
-class TimeRangeQuery(SchemaBase):
+class TimeRangeParams(SchemaBase):
     """通用时间范围查询参数"""
     start_time: datetime | None = Field(default=None, description='开始时间')
     end_time: datetime | None = Field(default=None, description='结束时间')
 
 
-class KeywordQuery(SchemaBase):
+class KeywordParams(SchemaBase):
     """通用关键字搜索参数"""
     keyword: str | None = Field(default=None, description='搜索关键字', max_length=100)
 

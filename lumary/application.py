@@ -16,9 +16,7 @@ from starlette.middleware import Middleware
 from starlette.middleware.cors import CORSMiddleware
 from starlette.routing import Mount
 
-from .__version__ import (
-    __version__ as lumary_version
-)
+from .__version__ import __version__ as lumary_version
 from .common import set_log_level
 from .handlers import build_exception_handlers
 from .lifespan import (
@@ -29,11 +27,11 @@ from .lifespan import (
 from .middleware import RequestIdMiddleware
 from .openapi import configure_openapi_schema
 from .schemas import (
-    SystemHealthOut,
-    SystemInfoOut,
-    SystemMetricsOut,
     APIResponse,
-    response_success
+    SystemHealthOut,
+    response_success,
+    SystemInfoOut,
+    SystemMetricsOut
 )
 
 _logger = getLogger(__name__)

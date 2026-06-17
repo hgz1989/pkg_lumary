@@ -399,7 +399,7 @@ class TestSoftDelete:
     async def test_soft_delete_return_obj(self, post_crud):
         """测试软删除时返回被删除的实体"""
         obj = await post_crud.create(obj_in=_PostCreate(title='ReturnObj'))
-        deleted_obj = await post_crud.soft_delete(obj_id=obj.id, return_obj=True)
+        deleted_obj = await post_crud.soft_delete(obj_id=obj.id)
         assert deleted_obj.id == obj.id
         assert deleted_obj.is_deleted is True
 
@@ -418,7 +418,7 @@ class TestSoftDelete:
             await post_crud.get(obj.id)
             
         # 恢复
-        restored_obj = await post_crud.restore(obj_id=obj.id, return_obj=True)
+        restored_obj = await post_crud.restore(obj_id=obj.id)
         assert restored_obj.is_deleted is False
         assert restored_obj.deleted_at is None
         

@@ -10,8 +10,7 @@ from lumary.common.context import (
     generate_request_id,
     set_request_id,
     get_request_id,
-    request_id_ctx_var,
-)
+    request_id_ctx_var)
 
 
 class TestGenerateRequestId:

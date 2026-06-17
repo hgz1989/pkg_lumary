@@ -3,18 +3,13 @@
 @CreateDate : 2026/5/14
 @Description: SQLAlchemy CRUD 泛型基类
 """
-from collections.abc import Sequence
-from typing import TypeVar, Generic, Any
+from typing import TypeVar, Generic, Any, Sequence
 
 from pydantic import BaseModel
-from sqlalchemy import (
-    inspect as sa_inspect,
-    Select,
-    text
-)
+from sqlalchemy import inspect as sa_inspect, Select, text
 from sqlalchemy.exc import (
-    NoResultFound,
     IntegrityError,
+    NoResultFound,
     InvalidRequestError
 )
 from sqlalchemy.ext.asyncio import AsyncSession

@@ -68,9 +68,9 @@ from .lifespan import (
 )
 from .schemas import (
     SchemaBase,
-    PageQuery,
-    TimeRangeQuery,
-    KeywordQuery,
+    PageParams,
+    TimeRangeParams,
+    KeywordParams,
     BatchIds,
     PageData,
     APIResponse,
@@ -143,9 +143,9 @@ __all__ = [
     'clear_hooks',
     # Schema
     'SchemaBase',
-    'PageQuery',
-    'TimeRangeQuery',
-    'KeywordQuery',
+    'PageParams',
+    'TimeRangeParams',
+    'KeywordParams',
     'BatchIds',
     'PageData',
     'APIResponse',

@@ -22,8 +22,7 @@ from lumary.exceptions import (
     URITooLongError,
     UnsupportedMediaTypeError,
     LockedError,
-    TooManyRequestsError,
-)
+    TooManyRequestsError)
 
 
 # ──────────────────────────────────────────────

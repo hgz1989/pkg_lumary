@@ -12,8 +12,7 @@ from lumary.common.utils.strings import (
     random_string,
     json_dumps,
     json_loads,
-    HAS_ORJSON,
-)
+    HAS_ORJSON)
 
 
 # ──────────────────────────────────────────────

@@ -9,9 +9,9 @@ from pydantic import ValidationError
 from lumary.common.context import set_request_id
 from lumary.schemas import (
     SchemaBase,
-    PageQuery,
-    TimeRangeQuery,
-    KeywordQuery,
+    PageParams,
+    TimeRangeParams,
+    KeywordParams,
     BatchIds,
     PageData,
     APIResponse,
@@ -19,8 +19,7 @@ from lumary.schemas import (
     response_success,
     response_fail,
     response_with_extra_success,
-    response_with_extra_fail,
-)
+    response_with_extra_fail)
 
 
 # ──────────────────────────────────────────────
@@ -55,26 +54,26 @@ class TestSchemaBase:
 # ──────────────────────────────────────────────
 class TestPageQuery:
     def test_defaults(self):
-        q = PageQuery()
+        q = PageParams()
         assert q.page == 1
         assert q.size == 100
 
     def test_valid_values(self):
-        q = PageQuery(page=3, size=50)
+        q = PageParams(page=3, size=50)
         assert q.page == 3
         assert q.size == 50
 
     def test_page_minimum(self):
         with pytest.raises(ValidationError):
-            PageQuery(page=0)
+            PageParams(page=0)
 
     def test_size_minimum(self):
         with pytest.raises(ValidationError):
-            PageQuery(size=0)
+            PageParams(size=0)
 
     def test_size_maximum(self):
         with pytest.raises(ValidationError):
-            PageQuery(size=1001)
+            PageParams(size=1001)
 
 
 # ──────────────────────────────────────────────
@@ -82,14 +81,14 @@ class TestPageQuery:
 # ──────────────────────────────────────────────
 class TestTimeRangeQuery:
     def test_defaults_none(self):
-        q = TimeRangeQuery()
+        q = TimeRangeParams()
         assert q.start_time is None
         assert q.end_time is None
 
     def test_with_values(self):
         from datetime import datetime
         dt = datetime(2026, 1, 1)
-        q = TimeRangeQuery(start_time=dt, end_time=dt)
+        q = TimeRangeParams(start_time=dt, end_time=dt)
         assert q.start_time == dt
 
 
@@ -98,11 +97,11 @@ class TestTimeRangeQuery:
 # ──────────────────────────────────────────────
 class TestKeywordQuery:
     def test_default_none(self):
-        assert KeywordQuery().keyword is None
+        assert KeywordParams().keyword is None
 
     def test_max_length(self):
         with pytest.raises(ValidationError):
-            KeywordQuery(keyword='x' * 101)
+            KeywordParams(keyword='x' * 101)
 
 
 # ──────────────────────────────────────────────

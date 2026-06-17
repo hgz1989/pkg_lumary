@@ -18,8 +18,7 @@ from lumary.common.logger import (
     UvicornNameRewriteFilter,
     setup_logger,
     set_log_level,
-    set_log_format,
-)
+    set_log_format)
 
 
 # ──────────────────────────────────────────────

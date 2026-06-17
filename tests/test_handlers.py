@@ -14,8 +14,7 @@ from lumary.exceptions import (
     BadRequestError,
     UnauthorizedError,
     ForbiddenError,
-    NotFoundError,
-)
+    NotFoundError)
 
 
 # ──────────────────────────────────────────────

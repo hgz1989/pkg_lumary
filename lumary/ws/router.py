@@ -1,6 +1,6 @@
 """
 @Author     : zarkhan
-@Date       : 2026/6/14
+@CreateDate : 2026/6/14
 @Description: WebSocket 专用路由，禁止注册常规 HTTP 接口
 """
 from fastapi import APIRouter

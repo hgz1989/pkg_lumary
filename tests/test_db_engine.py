@@ -10,8 +10,7 @@ from lumary.db.sqlalchemy.engine import (
     ASYNC_DRIVERS,
     _is_async_driver,
     _connect_args_from_url,
-    create_db_engine,
-)
+    create_db_engine)
 
 
 # ──────────────────────────────────────────────

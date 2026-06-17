@@ -139,6 +139,9 @@ class TestModelBase:
         obj = _SoftModel(title='test')
         # 触发 default 函数
         if callable(_SoftModel.__table__.c['id'].default.arg):
-            generated = _SoftModel.__table__.c['id'].default.arg()
+            try:
+                generated = _SoftModel.__table__.c['id'].default.arg(None)
+            except TypeError:
+                generated = _SoftModel.__table__.c['id'].default.arg()
             assert isinstance(generated, str)
             assert len(generated) == 26
