@@ -28,15 +28,21 @@ class SchemaBase(BaseModel):
     统一配置、统一行为
     """
     model_config = ConfigDict(
-        # 1. 核心：允许从 ORM 对象读取属性（必须）
+        # ✅ 1. 核心：允许从 ORM 对象读取属性（必须）
         from_attributes=True,
-        # 2. 允许使用别名（例如 camelCase 字段）
+
+        # ✅ 2. 允许使用别名（例如 camelCase 字段）
         populate_by_name=True,
-        # 3. 忽略多余字段（安全！前端传多余字段不会报错）
+
+        # ✅ 3. 忽略多余字段（安全！前端传多余字段不会报错）
         extra='ignore',
-        # 4. 自定义 JSON 编码器（处理 datetime 类型）
+
+        # ✅ 4. 允许任意类型（支持泛型绑定 ORM 模型等）
+        arbitrary_types_allowed=True,
+
+        # ✅ 5. 自定义 JSON 编码器（处理 datetime 类型）
         json_encoders={
-            datetime: lambda v: v.strftime('%Y-%m-%d %H:%M:%S'),
+            datetime: lambda v: v.strftime('%Y-%m-%d %H:%M:%S')
         }
     )
 

@@ -206,6 +206,7 @@ class CRUDBase(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
             db_obj = await self.get(obj_id)
 
         await self.db.delete(db_obj)
+        await self.db.flush()
         return db_obj
 
     async def update(self, *, db_obj: ModelType, obj_in: UpdateSchemaType | dict[str, Any]) -> ModelType:

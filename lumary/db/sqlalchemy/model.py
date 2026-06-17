@@ -24,7 +24,7 @@ class ModelBase(Base):
 
     id: Mapped[str] = mapped_column(
         String(26),
-        default=lambda: str(ULID()).lower(),
+        default=lambda ctx=None: str(ULID()).lower(),
         primary_key=True,
         comment='主键ID',
         sort_order=-10000

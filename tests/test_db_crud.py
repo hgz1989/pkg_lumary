@@ -29,6 +29,7 @@ class _UserModel(ModelBase):
 class _UserCreate(BaseModel):
     name: str
     age: int = 0
+    extra_field: str | None = None  # 用于测试多余字段容忍
 
 
 class _UserUpdate(BaseModel):
@@ -131,6 +132,34 @@ class TestCreate:
         obj = await user_crud.create(obj_in=schema)
         assert obj.name == 'Eve'
 
+    async def test_create_with_extra_fields(self, user_crud):
+        """测试 Schema 中包含 ORM 没有的额外字段，应被静默过滤"""
+        obj_in = _UserCreate(name='Alice_Extra', age=25, extra_field='ignore_me')
+        obj = await user_crud.create(obj_in=obj_in)
+        assert obj.name == 'Alice_Extra'
+        assert not hasattr(obj, 'extra_field')
+
+    async def test_batch_create(self, user_crud):
+        """测试批量创建"""
+        objs_in = [
+            _UserCreate(name='Batch1', age=1),
+            _UserCreate(name='Batch2', age=2),
+            {'name': 'BatchDict', 'age': 3, 'extra_field': 'ignore'}
+        ]
+        created_objs = await user_crud.batch_create(objs_in=objs_in)
+        assert len(created_objs) == 3
+        assert created_objs[0].name == 'Batch1'
+        assert created_objs[2].name == 'BatchDict'
+
+    async def test_batch_create_ignore_errors(self, user_crud):
+        """测试批量创建忽略错误（SQLite in-memory 对唯一约束支持有限，这里测试基本逻辑执行成功）"""
+        objs_in = [
+            _UserCreate(name='BatchErr1', age=1),
+            _UserCreate(name='BatchErr2', age=2),
+        ]
+        created_objs = await user_crud.batch_create(objs_in=objs_in, ignore_errors=True)
+        assert len(created_objs) == 2
+
 
 # ──────────────────────────────────────────────
 # Batch Create
@@ -166,6 +195,15 @@ class TestGet:
     async def test_get_nonexistent_raises(self, user_crud):
         with pytest.raises(NoResultFound):
             await user_crud.get('nonexistent-id')
+
+    async def test_get_with_options(self, user_crud):
+        """测试带 options 查询不报错"""
+        from sqlalchemy.orm import undefer
+        obj = await user_crud.create(obj_in=_UserCreate(name='GetOpt', age=1))
+        # sqlite 没啥好 join 的，随便传个 undefer 验证不报错
+        found = await user_crud.get(obj_id=obj.id, options=[undefer(_UserModel.name)])
+        assert found is not None
+        assert found.name == 'GetOpt'
 
     async def test_get_with_deleted_returns_none_for_missing(self, post_crud):
         result = await post_crud.get_with_deleted('nope')
@@ -275,6 +313,20 @@ class TestUpdate:
         updated = await user_crud.update(db_obj=obj, obj_in={'age': 99})
         assert updated.age == 99
 
+    async def test_update_with_dict(self, user_crud):
+        obj = await user_crud.create(obj_in=_UserCreate(name='Bob', age=30))
+        updated = await user_crud.update(db_obj=obj, obj_in={'name': 'BobDict', 'age': 32})
+        assert updated.name == 'BobDict'
+        assert updated.age == 32
+
+    async def test_update_with_extra_fields(self, user_crud):
+        """测试 Update Schema 中有多余字段"""
+        obj = await user_crud.create(obj_in=_UserCreate(name='Extra', age=20))
+        # 强制传入一个包含额外字段的字典，因为 _UserUpdate 没有定义 extra_field
+        updated = await user_crud.update(db_obj=obj, obj_in={'name': 'Extra2', 'extra_field': 'hello'})
+        assert updated.name == 'Extra2'
+        assert not hasattr(updated, 'extra_field')
+
     async def test_update_ignores_invalid_fields(self, user_crud):
         """字典中不在 valid_columns 的字段应被过滤"""
         obj = await user_crud.create(obj_in=_UserCreate(name='FilterOld', age=3))
@@ -343,6 +395,36 @@ class TestSoftDelete:
         obj = await user_crud.create(obj_in=_UserCreate(name='NonSoft', age=1))
         with pytest.raises(NotImplementedError, match='不支持软删除'):
             await user_crud.soft_delete(obj_id=obj.id)
+
+    async def test_soft_delete_return_obj(self, post_crud):
+        """测试软删除时返回被删除的实体"""
+        obj = await post_crud.create(obj_in=_PostCreate(title='ReturnObj'))
+        deleted_obj = await post_crud.soft_delete(obj_id=obj.id, return_obj=True)
+        assert deleted_obj.id == obj.id
+        assert deleted_obj.is_deleted is True
+
+    async def test_restore_unsupported_model(self, user_crud):
+        obj = await user_crud.create(obj_in=_UserCreate(name='NoRestore', age=1))
+        with pytest.raises(NotImplementedError):
+            await user_crud.restore(obj_id=obj.id)
+
+    async def test_restore_success(self, post_crud):
+        """测试恢复软删除"""
+        obj = await post_crud.create(obj_in=_PostCreate(title='ToRestore'))
+        await post_crud.soft_delete(obj_id=obj.id)
+        
+        # 已软删除，正常 get 查不到
+        with pytest.raises(NoResultFound):
+            await post_crud.get(obj.id)
+            
+        # 恢复
+        restored_obj = await post_crud.restore(obj_id=obj.id, return_obj=True)
+        assert restored_obj.is_deleted is False
+        assert restored_obj.deleted_at is None
+        
+        # 恢复后可以 get 到
+        found = await post_crud.get(obj.id)
+        assert found.id == obj.id
 
     async def test_soft_deleted_hidden_from_get_multi(self, post_crud):
         obj = await post_crud.create(obj_in=_PostCreate(title='MultiHide'))

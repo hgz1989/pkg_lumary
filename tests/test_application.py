@@ -120,3 +120,10 @@ class TestSystemEndpoints:
         body = resp.json()
         assert 'code' in body
         assert 'message' in body
+
+class TestSubAppMounting:
+    def test_mount_sub_apps_missing_dir(self, app):
+        """挂载不存在的子应用目录时应抛出 RuntimeError"""
+        with pytest.raises(RuntimeError) as exc_info:
+            app.mount_sub_apps('not_exist_dir')
+        assert '目录 not_exist_dir 不存在' in str(exc_info.value)

@@ -100,3 +100,77 @@ class TestGetService:
         async for svc in dep():
             assert isinstance(svc.db, AsyncSession)
             break
+
+# ──────────────────────────────────────────────
+# service 装饰器 (FastAPI 依赖注入)
+# ──────────────────────────────────────────────
+class TestServiceDecorator:
+    def test_decorator_returns_class(self, factory):
+        @factory.service()
+        class MyService:
+            def __init__(self, db: AsyncSession):
+                self.db = db
+
+        assert isinstance(MyService, type)
+        assert MyService.__name__ == 'MyService'
+
+    def test_signature_rewritten_with_depends(self, factory):
+        """测试服务类的 __init__ 签名中 db 参数被替换为 Depends"""
+        import inspect
+        from fastapi.params import Depends
+
+        @factory.service()
+        class MyService:
+            def __init__(self, db: AsyncSession):
+                self.db = db
+
+        sig = inspect.signature(MyService)
+        db_param = sig.parameters.get('db')
+        
+        assert db_param is not None
+        assert isinstance(db_param.default, Depends)
+
+    def test_signature_rewritten_by_type_annotation(self, factory):
+        """测试通过类型提示 AsyncSession 自动识别并注入"""
+        import inspect
+        from fastapi.params import Depends
+
+        @factory.service()
+        class AnotherService:
+            # 参数名不是 db，但类型是 AsyncSession
+            def __init__(self, custom_session: AsyncSession):
+                self.custom_session = custom_session
+
+        sig = inspect.signature(AnotherService)
+        session_param = sig.parameters.get('custom_session')
+        
+        assert session_param is not None
+        assert isinstance(session_param.default, Depends)
+
+    def test_fastapi_integration(self, factory):
+        """模拟在 FastAPI 中使用的完整流程"""
+        from fastapi import FastAPI, Depends
+        from fastapi.testclient import TestClient
+
+        @factory.service()
+        class EndpointService:
+            def __init__(self, db: AsyncSession):
+                self.db = db
+                
+            async def get_data(self):
+                # 简单验证 db 能够执行 SQL
+                res = await self.db.execute(text("SELECT 'success'"))
+                return res.scalar()
+
+        app = FastAPI()
+
+        @app.get("/test-service")
+        async def test_endpoint(service: EndpointService = Depends()):
+            data = await service.get_data()
+            return {"result": data}
+
+        client = TestClient(app)
+        response = client.get("/test-service")
+        
+        assert response.status_code == 200
+        assert response.json() == {"result": "success"}
