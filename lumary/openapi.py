@@ -3,20 +3,25 @@
 @CreateDate : 2026/5/14
 @Description: OpenAPI 文档自定义配置
 """
+from logging import getLogger
 from typing import Any
 
 from fastapi import FastAPI
 from fastapi.openapi.utils import get_openapi
 
-def setup_custom_openapi(app: FastAPI) -> None:
-    """设置自定义OPENAPI
+_logger = getLogger(__name__)
+
+
+def configure_openapi_schema(app: FastAPI) -> None:
+    """配置 OpenAPI Schema
 
     Args:
         app: FastAPI实例对象
     """
+    _logger.debug(f'[{app.title}] 配置自定义 OpenAPI Schema...')
 
     def custom_openapi() -> dict[str, Any] | None:
-        """自定义OPENAPI
+        """自定义 OpenAPI Schema
 
         Returns:
             OPENAPI模式字典或None
@@ -50,8 +55,11 @@ def setup_custom_openapi(app: FastAPI) -> None:
         # 删掉所有接口的 422
         paths = openapi_schema.get('paths', {})
         for path in paths.values():
-            for method in path.values():
-                responses = method.get('responses', {})
+            for method_obj in path.values():
+                # 跳过非字典类型的字段（如 parameters、summary 等）
+                if not isinstance(method_obj, dict):
+                    continue
+                responses = method_obj.get('responses', {})
                 responses.pop('422', None)
 
         app.openapi_schema = openapi_schema

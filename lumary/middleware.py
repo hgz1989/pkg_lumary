@@ -3,15 +3,10 @@
 @CreateDate : 2026/5/14
 @Description: 应用中间件配置
 """
-from logging import getLogger
 
-from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
-from starlette.types import ASGIApp, Message, Receive, Scope, Send
+from starlette.types import ASGIApp, Scope, Receive, Send, Message
 
 from .common import generate_request_id, set_request_id
-
-logger = getLogger(__name__)
 
 
 class RequestIdMiddleware:
@@ -25,10 +20,22 @@ class RequestIdMiddleware:
     - 下一个请求会自动覆盖旧值，不存在串数据风险
     """
 
-    def __init__(self, app: ASGIApp) -> None:
+    def __init__(self, app: ASGIApp):
+        """初始化 request_id 中间件
+
+        Args:
+            app: ASGI应用
+        """
         self.app = app
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        """处理ASGI请求
+
+        Args:
+            scope: ASGI作用域
+            receive: 接收请求数据
+            send: 发送响应数据
+        """
         if scope['type'] not in ('http', 'websocket'):
             await self.app(scope, receive, send)
             return
@@ -36,10 +43,12 @@ class RequestIdMiddleware:
         # 从请求头提取或自动生成 request_id
         headers_list = scope.get('headers', [])
         request_id = None
+
         for key, value in headers_list:
             if key == b'x-request-id':
                 request_id = value.decode('utf-8')
                 break
+
         if not request_id:
             request_id = generate_request_id()
 
@@ -59,41 +68,3 @@ class RequestIdMiddleware:
         else:
             # WebSocket 请求：仅设置上下文，不注入响应头
             await self.app(scope, receive, send)
-
-
-def setup_middlewares(
-        app: FastAPI,
-        *,
-        enable_cors: bool,
-        allow_origins: list[str] | None = None,
-        allow_methods: list[str] | None = None,
-        allow_headers: list[str] | None = None,
-) -> None:
-    """注册全局中间件
-
-    将日志链路追踪、CORS 等中间件挂载到 FastAPI 实例
-
-    Args:
-        app: 当前运行的 FastAPI 应用实例
-        enable_cors: 是否启用 CORS 中间件
-        allow_origins: 允许的源列表
-        allow_methods: 允许的方法列表
-        allow_headers: 允许的头列表
-    """
-    # 纯 ASGI request_id 中间件（必须放在最外层，最先执行）
-    app.add_middleware(RequestIdMiddleware)
-
-    # 动态 CORS 跨域（根据配置开启）
-    if enable_cors:
-        origins = allow_origins or ['*']
-        # 避免 `allow_origins=['*']` 与 `allow_credentials=True` 同时出现引发的兼容和安全风险
-        credentials = origins != ['*']
-
-        app.add_middleware(
-            CORSMiddleware,  # type: ignore
-            allow_origins=origins,
-            allow_credentials=credentials,
-            allow_methods=allow_methods or ['*'],
-            allow_headers=allow_headers or ['*'],
-        )
-        logger.info(f'[{app.title}] Cross-Origin Resource Sharing enabled')

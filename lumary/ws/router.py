@@ -1,32 +1,36 @@
 """
 @Author     : zarkhan
 @Date       : 2026/6/14
-@Description:
+@Description: WebSocket 专用路由，禁止注册常规 HTTP 接口
 """
 from fastapi import APIRouter
 
 
-class WebSocketRouter(APIRouter):
+class WSRouter(APIRouter):
+    """WebSocket 专用路由
+
+    继承自 APIRouter，默认前缀为 '/ws'
+    重写 add_api_route 禁止注册 HTTP 接口，确保该路由仅用于 WebSocket 端点
+    """
+
     def __init__(self, *args, **kwargs):
+        """初始化 WebSocket 专用路由
+
+        Args:
+            *args: 传递给 APIRouter 的位置参数
+            **kwargs: 传递给 APIRouter 的关键字参数，prefix 默认为 '/ws'
+        """
+        kwargs.setdefault('prefix', '/ws')
         super().__init__(*args, **kwargs)
-        self.prefix = "/ws"
 
-    # 拦截常规 HTTP 方法注册
     def add_api_route(self, *args, **kwargs):
-        raise NotImplementedError("当前路由实例仅支持 WebSocket，不允许注册 HTTP 接口")
+        """禁止在当前路由实例上注册 HTTP 接口
 
-    # 可选：逐个拦截常用 HTTP 装饰器（增加友好提示）
-    def get(self, *args, **kwargs):
-        raise NotImplementedError("WSRouter 仅支持 WebSocket，禁止使用 GET")
+        Args:
+            *args: 无意义，仅为展示拦截
+            **kwargs: 无意义，仅为展示拦截
 
-    def post(self, *args, **kwargs):
-        raise NotImplementedError("WSRouter 仅支持 WebSocket，禁止使用 POST")
-
-    def put(self, *args, **kwargs):
-        raise NotImplementedError("WSRouter 仅支持 WebSocket，禁止使用 PUT")
-
-    def delete(self, *args, **kwargs):
-        raise NotImplementedError("WSRouter 仅支持 WebSocket，禁止使用 DELETE")
-
-    def patch(self, *args, **kwargs):
-        raise NotImplementedError("WSRouter 仅支持 WebSocket，禁止使用 PATCH")
+        Raises:
+            NotImplementedError: 无论何时调用均抛出
+        """
+        raise NotImplementedError('当前路由实例仅支持 WebSocket，不允许注册 HTTP 接口')

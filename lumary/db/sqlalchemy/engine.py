@@ -43,11 +43,11 @@ def _connect_args_from_url(url: str) -> dict:
         # SQLite 共享连接所需配置
         return {'check_same_thread': False}
 
-    if _is_async_driver(url) and 'asyncpg' in scheme:
+    if 'asyncpg' in scheme:
         return {
             'statement_cache_size': 0,
-                'prepared_statement_cache_size': 0,
-            }
+            'prepared_statement_cache_size': 0,
+        }
 
     return {}
 
@@ -60,12 +60,12 @@ def create_db_engine(
     connect_args: Mapping[str, Any] | None = None,
     **engine_kwargs: Any,
 ) -> AsyncEngine:
-    """自动创建异步引擎
+    """创建异步数据库引擎
 
-    默认从 settings.sqlalchemy_url 获取配置
+    根据传入的 URL 自动推断驱动类型并配置对应的连接参数
 
     Args:
-        url: 数据库连接 URL，默认为 None 时读取配置
+        url: 数据库连接 URL
         echo: 是否打印 SQL 日志
         pool_pre_ping: 是否在借出连接前测试连接
         connect_args: 传递给驱动的额外连接参数
@@ -76,12 +76,10 @@ def create_db_engine(
     """
     if not _is_async_driver(url):
         raise ValueError(
-            f'URL "{url}" is not an async driver,only asynchronous drives are supported. Please check your settings.'
+            f'URL "{url}" 不是异步驱动，仅支持异步驱动，请检查配置'
         )
 
     default_args = _connect_args_from_url(url)
     merged_args = {**default_args, **(connect_args or {})}
 
     return create_async_engine(url, echo=echo, pool_pre_ping=pool_pre_ping, connect_args=merged_args, **engine_kwargs)
-
-

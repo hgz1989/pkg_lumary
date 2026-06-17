@@ -4,6 +4,7 @@
 @Description: 核心响应与请求数据模型
 """
 from datetime import datetime
+from math import ceil
 from typing import TypeVar, Generic, Sequence, Any
 
 from pydantic import (
@@ -59,7 +60,7 @@ class KeywordQuery(SchemaBase):
 
 class BatchIds(SchemaBase):
     """通用批量操作参数（如批量删除/更新）"""
-    ids: list[int] | list[str] = Field(..., description='ID列表', min_length=1)
+    ids: list[int] | list[str] = Field(description='ID列表', min_length=1)
 
 
 class SystemHealthOut(SchemaBase):
@@ -70,20 +71,61 @@ class SystemHealthOut(SchemaBase):
     debug: bool = Field(default=False, description='是否处于调试模式')
 
 
+class SystemInfoOut(SchemaBase):
+    """系统详细信息输出"""
+    name: str = Field(description='系统名称')
+    version: str = Field(description='系统版本')
+    debug: bool = Field(description='是否处于调试模式')
+    routes_count: int = Field(description='已注册路由数量')
+    sub_apps_count: int = Field(description='已挂载子应用数量')
+    python_version: str = Field(description='Python 运行时版本')
+
+
+class SystemMetricsOut(SchemaBase):
+    """系统运行指标输出"""
+    uptime_seconds: float = Field(description='应用运行时长（秒）')
+    memory_mb: float = Field(description='进程内存占用（MB），不支持则为 -1')
+
+
 class PageData(SchemaBase, Generic[T]):
     """通用分页响应数据（全量信息）"""
-    items: list[T] | Sequence[T] = Field(default_factory=list, description='当前页数据列表')
+    items: Sequence[T] = Field(default_factory=list, description='当前页数据列表')
     page: int = Field(default=1, description='当前页码')
     size: int = Field(default=10, description='每页数量')
     pages: int = Field(default=0, description='总页数')
     total: int = Field(default=0, description='总记录数')
+
+    @classmethod
+    def build(
+            cls,
+            items: list[T] | Sequence[T],
+            *,
+            page: int,
+            size: int,
+            total: int
+    ) -> 'PageData[T]':
+        """根据查询结果构建分页响应
+
+        自动计算总页数，避免调用方重复手动计算
+
+        Args:
+            items: 当前页数据列表
+            page: 当前页码
+            size: 每页数量
+            total: 总记录数
+
+        Returns:
+            构建好的分页响应对象
+        """
+        pages = ceil(total / size) if size > 0 else 0
+        return cls(items=items, page=page, size=size, pages=pages, total=total)
 
 
 class APIResponseBase(SchemaBase):
     """底层基础响应，同时承载 data + extra 两套泛型"""
     request_id: str = Field(description='请求唯一追踪ID')
     code: int = Field(default=0, description='状态码，0为成功，其他为错误')
-    message: str = Field(default='Success', description='提示信息')
+    message: str = Field(default='成功', description='提示信息')
 
 
 class APIResponse(APIResponseBase, Generic[T]):
@@ -100,14 +142,16 @@ class APIResponseWithExtra(APIResponseBase, Generic[T, E]):
 def _response(
         code: int | None = None,
         message: str | None = None,
-        data: T | None = None
-) -> APIResponse[T]:
+        data: T | None = None,
+        extra: E | None = None
+) -> dict[str, Any]:
     """返回通用响应
 
     Args:
         code: 状态码
         message: 提示信息
         data: 响应数据
+        extra: 扩展数据
 
     Returns:
         APIResponse[T]
@@ -125,7 +169,10 @@ def _response(
     if data is not None:
         kwargs['data'] = data
 
-    return APIResponse(**kwargs)
+    if extra is not None:
+        kwargs['extra'] = extra
+
+    return kwargs
 
 
 def response_success(
@@ -135,18 +182,19 @@ def response_success(
     """返回成功响应
 
     Args:
-        data: 响应数据
         message: 提示信息
+        data: 响应数据
 
     Returns:
         APIResponse[T]
     """
-    return _response(code=0, message=message, data=data)
+    resp_data = _response(code=0, message=message, data=data)
+    return APIResponse(**resp_data)
 
 
 def response_fail(
         code: int,
-        message: str = 'Fail',
+        message: str = '失败',
         data: T | None = None
 ) -> APIResponse[T]:
     """返回失败响应
@@ -155,46 +203,12 @@ def response_fail(
         code: 错误码
         message: 错误信息
         data: 附加错误数据
+
     Returns:
         APIResponse[T]
     """
-    return _response(code=code, message=message, data=data)
-
-
-def _response_with_extra(
-        code: int | None = None,
-        message: str | None = None,
-        data: T | None = None,
-        extra: E | None = None
-) -> APIResponseWithExtra[T, E]:
-    """返回携带扩展数据的响应
-
-    Args:
-        code: 状态码
-        message: 提示信息
-        data: 响应数据
-        extra: 扩展数据
-
-    Returns:
-        APIResponseWithExtra[T, E]
-    """
-    kwargs: dict[str, Any] = {
-        'request_id': get_request_id()
-    }
-
-    if code is not None:
-        kwargs['code'] = code
-
-    if message:
-        kwargs['message'] = message
-
-    if data is not None:
-        kwargs['data'] = data
-
-    if extra is not None:
-        kwargs['extra'] = extra
-
-    return APIResponseWithExtra(**kwargs)
+    resp_data = _response(code=code, message=message, data=data)
+    return APIResponse(**resp_data)
 
 
 def response_with_extra_success(
@@ -205,14 +219,15 @@ def response_with_extra_success(
     """返回携带扩展数据的成功响应
 
     Args:
-       message: 提示信息
-       data: 响应数据
-       extra: 扩展数据
+        message: 提示信息
+        data: 响应数据
+        extra: 扩展数据
 
     Returns:
         APIResponseWithExtra[T, E]
     """
-    return _response_with_extra(message=message, data=data, extra=extra)
+    resp_data = _response(code=0, message=message, data=data, extra=extra)
+    return APIResponseWithExtra(**resp_data)
 
 
 def response_with_extra_fail(
@@ -232,4 +247,5 @@ def response_with_extra_fail(
     Returns:
         APIResponseWithExtra[T, E]
     """
-    return _response_with_extra(code=code, message=message, data=data, extra=extra)
+    resp_data = _response(code=code, message=message, data=data, extra=extra)
+    return APIResponseWithExtra(**resp_data)

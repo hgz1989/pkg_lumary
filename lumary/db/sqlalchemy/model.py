@@ -13,6 +13,7 @@ from ulid import ULID
 
 from .base import Base
 
+
 class ModelBase(Base):
     """SQLAlchemy 模型基础类
 
@@ -41,5 +42,3 @@ class ModelBase(Base):
         onupdate=func.now(),
         comment='更新时间'
     )
-
-

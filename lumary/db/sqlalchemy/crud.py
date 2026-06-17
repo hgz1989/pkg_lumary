@@ -18,9 +18,11 @@ from sqlalchemy.exc import (
     InvalidRequestError
 )
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.sql import select, func
+from sqlalchemy.sql import func, select
 
 from .model import ModelBase
+from ...common.mixins.sqlalchemy import SoftDeleteMixin
+from ...schemas import PageData
 
 ModelType = TypeVar('ModelType', bound=ModelBase)
 CreateSchemaType = TypeVar('CreateSchemaType', bound=BaseModel)
@@ -122,7 +124,8 @@ class CRUDBase(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
                 successful_objs.append(db_obj)
             except IntegrityError:
                 # 唯一约束冲突等数据库异常被捕获，跳过该记录
-                pass
+                # 必须从 session 中移除该对象，否则后续 flush 可能再次触发同一错误
+                self.db.expunge(db_obj)
 
         return successful_objs
 
@@ -136,7 +139,7 @@ class CRUDBase(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
         Returns:
             被删除或恢复的实例
         """
-        if not hasattr(self.model, 'is_deleted'):
+        if not issubclass(self.model, SoftDeleteMixin):
             raise NotImplementedError('模型不支持软删除')
 
         # 区分：删除查正常数据，恢复要查已删除数据
@@ -148,7 +151,7 @@ class CRUDBase(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
             db_obj = await self.get_with_deleted(obj_id)
 
             # 必须判空，因为可能返回 None
-            if not db_obj:
+            if db_obj is None:
                 raise NoResultFound(f'{self.model.__name__}记录不存在: id={obj_id}')
 
             # 有对象才能操作属性
@@ -199,7 +202,7 @@ class CRUDBase(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
             raise ValueError('必须传入db_obj或obj_id中的至少一个')
 
         # 如果已经传入 obj，直接使用，不再查库
-        if not db_obj:
+        if db_obj is None:
             db_obj = await self.get(obj_id)
 
         await self.db.delete(db_obj)
@@ -237,10 +240,10 @@ class CRUDBase(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
         """
         db_obj = await self.db.get(self.model, obj_id, options=options, **kwargs)
 
-        if not db_obj:
+        if db_obj is None:
             raise NoResultFound(f'{self.model.__name__}记录不存在: id={obj_id}')
 
-        if hasattr(db_obj, 'is_deleted') and db_obj.is_deleted:
+        if issubclass(self.model, SoftDeleteMixin) and db_obj.is_deleted:
             raise NoResultFound(f'{self.model.__name__}记录已被删除: id={obj_id}')
 
         return db_obj
@@ -248,14 +251,15 @@ class CRUDBase(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
     async def get_with_deleted(self, obj_id: Any) -> ModelType | None:
         """查询主键记录，包含已软删除的数据
 
+        使用 SQLAlchemy 原生主键查找，自动适配任意主键名称和复合主键。
+
         Args:
             obj_id: 数据主键ID
 
         Returns:
             匹配主键的实体对象；无匹配数据时返回 None
         """
-        stmt = select(self.model).where(self.model.id == obj_id)
-        return await self.db.scalar(stmt)
+        return await self.db.get(self.model, obj_id)
 
     def _apply_soft_delete_filter(self, stmt: Select) -> Select:
         """为查询语句添加软删除过滤条件
@@ -268,7 +272,7 @@ class CRUDBase(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
         Returns:
             添加了软删除过滤条件的查询语句
         """
-        if hasattr(self.model, 'is_deleted'):
+        if issubclass(self.model, SoftDeleteMixin):
             stmt = stmt.where(self.model.is_deleted.is_(False))
 
         return stmt
@@ -378,6 +382,42 @@ class CRUDBase(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
         stmt = stmt.offset(skip).limit(limit)
         result = await self.db.execute(stmt)
         return result.scalars().all()
+
+    async def get_page(
+            self,
+            *criteria: Any,
+            page: int = 1,
+            size: int = 100,
+            order_by: Any | Sequence[Any] | None = None,
+            options: list | None = None,
+            **kwargs: Any,
+    ) -> PageData[ModelType]:
+        """获取分页数据，自动查询总数并构建 PageData
+
+        封装了先查总数再查分页数据的标准分页流程，调用方无需手动计算 skip
+
+        Args:
+            *criteria: SQLAlchemy 查询条件 (如 model.age > 18)
+            page: 当前页码（从 1 开始）
+            size: 每页数量
+            order_by: 排序字段或字段列表 (如 model.id.desc())
+            options: SQLAlchemy 加载策略列表，用于外键关联查询
+            **kwargs: 精确匹配的过滤条件 (如 status=1)
+
+        Returns:
+            包含当前页数据与分页元信息的 PageData 对象
+        """
+        skip = (page - 1) * size
+        total = await self.get_count(*criteria, **kwargs)
+        items = await self.get_multi(
+            *criteria,
+            skip=skip,
+            limit=size,
+            order_by=order_by,
+            options=options,
+            **kwargs,
+        )
+        return PageData.build(items=list(items), page=page, size=size, total=total)
 
     async def execute_stmt(self, *, stmt: Any, options: list | None = None) -> Any:
         """执行外部传入的 SQLAlchemy 语句

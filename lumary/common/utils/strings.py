@@ -86,5 +86,3 @@ def json_loads(s: str | bytes) -> Any:
     if HAS_ORJSON:
         return orjson.loads(s)
     return json.loads(s)
-
-

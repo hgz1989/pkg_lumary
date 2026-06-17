@@ -11,7 +11,7 @@ request_id_ctx_var: ContextVar[str | None] = ContextVar('request_id', default=No
 
 
 def generate_request_id() -> str:
-    """ 生成一个随机的 Request ID
+    """生成一个随机的 Request ID
 
     Returns:
         随机生成的 Request ID

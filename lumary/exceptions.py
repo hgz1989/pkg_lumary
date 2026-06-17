@@ -134,7 +134,7 @@ class PayloadTooLargeError(HTTPException):
     def __init__(self, detail: str | None = None):
         """初始化请求体过大错误"""
         super().__init__(
-            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            status_code=status.HTTP_413_CONTENT_TOO_LARGE,
             detail=detail or 'Payload too large'
         )
 
@@ -145,7 +145,7 @@ class URITooLongError(HTTPException):
     def __init__(self, detail: str | None = None):
         """初始化 URI 过长错误"""
         super().__init__(
-            status_code=status.HTTP_414_REQUEST_URI_TOO_LONG,
+            status_code=status.HTTP_414_URI_TOO_LONG,
             detail=detail or 'URI too long'
         )
 

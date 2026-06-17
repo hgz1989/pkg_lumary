@@ -6,8 +6,9 @@
 
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime
+from sqlalchemy import Boolean, DateTime, String
 from sqlalchemy.orm import Mapped, mapped_column
+
 
 class SoftDeleteMixin:
     """SQLAlchemy 软删除混入类
@@ -29,3 +30,21 @@ class SoftDeleteMixin:
     )
 
 
+class AuditMixin:
+    """SQLAlchemy 操作人审计混入类
+
+    为业务模型提供 `created_by` 和 `updated_by` 字段，
+    用于记录数据的创建人和最后修改人，便于操作审计追源
+    """
+
+    created_by: Mapped[str | None] = mapped_column(
+        String(64),
+        nullable=True,
+        comment='创建人'
+    )
+
+    updated_by: Mapped[str | None] = mapped_column(
+        String(64),
+        nullable=True,
+        comment='最后修改人'
+    )

@@ -4,6 +4,7 @@
 @Description: WebSocket 连接管理器
 """
 
+import time
 from asyncio import gather
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
@@ -13,7 +14,7 @@ from uuid import uuid4
 
 from fastapi import WebSocket
 
-logger = getLogger(__name__)
+_logger = getLogger(__name__)
 
 
 # WebSocket 连接管理器
@@ -32,7 +33,7 @@ class WSConnectionManager:
         manager = WSConnectionManager()
 
         # 方式一：手动管理连接生命周期
-        @app.ws("/ws")
+        @app.websocket("/ws")
         async def ws_endpoint(ws: WebSocket):
             cid = await manager.connect(ws, group='chat')
             try:
@@ -51,22 +52,23 @@ class WSConnectionManager:
                     await manager.broadcast_json(data, group='chat', exclude={cid})
     """
 
-    __slots__ = ('_connections', '_groups')
+    __slots__ = ('_connections', '_groups', '_metadata', '_last_seen')
 
     def __init__(self):
         """初始化"""
         self._connections: dict[str, WebSocket] = {}
         self._groups: dict[str, set[str]] = {}
+        self._metadata: dict[str, dict[str, Any]] = {}   # 连接元数据
+        self._last_seen: dict[str, float] = {}            # 最近心跳时间戳
 
-        # 连接生命周期
-
-    async def connect(self, websocket: WebSocket, *, connection_id: str | None = None, group: str | None = None) -> str:
+    async def connect(self, websocket: WebSocket, *, connection_id: str | None = None, group: str | None = None, metadata: dict[str, Any] | None = None) -> str:
         """接受并存储新的 WebSocket 连接
 
         Args:
             websocket: FastAPI WebSocket 实例
             connection_id: 自定义连接ID（如 user_id），不传则自动生成 UUID
             group: 分组名称，加入后可按组广播
+            metadata: 连接附带元数据，如用户名、角色、自定义标签等
 
         Returns:
             连接ID
@@ -75,11 +77,13 @@ class WSConnectionManager:
 
         cid = connection_id or str(uuid4())
         self._connections[cid] = websocket
+        self._metadata[cid] = dict(metadata) if metadata else {}
+        self._last_seen[cid] = time.monotonic()
 
         if group:
             self._groups.setdefault(group, set()).add(cid)
 
-        logger.info(f'WebSocket connected: {cid}' + (f' [group: {group}]' if group else ''))
+        _logger.info(f'WebSocket 已连接：{cid}' + (f' [分组：{group}]' if group else ''))
         return cid
 
     async def disconnect(self, connection_id: str) -> None:
@@ -92,6 +96,8 @@ class WSConnectionManager:
             connection_id: 连接ID
         """
         ws = self._connections.pop(connection_id, None)
+        self._metadata.pop(connection_id, None)
+        self._last_seen.pop(connection_id, None)
         if ws is None:
             return
 
@@ -108,13 +114,13 @@ class WSConnectionManager:
         try:
             await ws.close()
         except Exception as e:
-            logger.warning(f'Failed to close WebSocket: {connection_id},exception info: {str(e)}')
+            _logger.warning(f'关闭 WebSocket 失败：{connection_id}，异常信息：{str(e)}')
 
-        logger.info(f'WebSocket disconnected: {connection_id}')
+        _logger.info(f'WebSocket 已断开：{connection_id}')
 
     @asynccontextmanager
     async def lifespan(
-        self, websocket: WebSocket, *, connection_id: str | None = None, group: str | None = None
+        self, websocket: WebSocket, *, connection_id: str | None = None, group: str | None = None, metadata: dict[str, Any] | None = None
     ) -> AsyncGenerator[str, None]:
         """上下文管理器方式管理连接生命周期
 
@@ -124,6 +130,7 @@ class WSConnectionManager:
             websocket: FastAPI WebSocket 实例
             connection_id: 自定义连接ID，不传则自动生成 UUID
             group: 分组名称
+            metadata: 连接附带元数据
 
         Yields:
             连接ID
@@ -134,7 +141,7 @@ class WSConnectionManager:
                     data = await ws.receive_json()
                     await manager.broadcast_json(data, group="room1", exclude={cid})
         """
-        cid = await self.connect(websocket, connection_id=connection_id, group=group)
+        cid = await self.connect(websocket, connection_id=connection_id, group=group, metadata=metadata)
         try:
             yield cid
         finally:
@@ -152,9 +159,9 @@ class WSConnectionManager:
             KeyError: 当连接不存在时抛出
         """
         if connection_id not in self._connections:
-            raise KeyError(f'Connection {connection_id} does not exist')
+            raise KeyError(f'连接 {connection_id} 不存在')
         self._groups.setdefault(group, set()).add(connection_id)
-        logger.debug(f'WebSocket {connection_id} joined group: {group}')
+        _logger.debug(f'WebSocket {connection_id} 已加入分组：{group}')
 
     def leave_group(self, connection_id: str, group: str) -> None:
         """将连接从指定分组中移除
@@ -173,7 +180,7 @@ class WSConnectionManager:
         if not conns:
             del self._groups[group]
 
-        logger.debug(f'WebSocket {connection_id} left group: {group}')
+        _logger.debug(f'WebSocket {connection_id} 已离开分组：{group}')
 
     # 单播
     async def send_text(self, connection_id: str, message: str) -> None:
@@ -185,12 +192,12 @@ class WSConnectionManager:
         """
         ws = self._connections.get(connection_id)
         if ws is None:
-            logger.warning(f'Cannot send text: connection {connection_id} not found')
+            _logger.warning(f'无法发送文本：连接 {connection_id} 不存在')
             return
         try:
             await ws.send_text(message)
         except Exception as e:
-            logger.error(f'Failed to send text to {connection_id}: {e}')
+            _logger.error(f'向 {connection_id} 发送文本失败：{e}')
 
     async def send_json(self, connection_id: str, data: Any) -> None:
         """向指定连接发送 JSON 数据
@@ -201,12 +208,12 @@ class WSConnectionManager:
         """
         ws = self._connections.get(connection_id)
         if ws is None:
-            logger.warning(f'Cannot send json: connection {connection_id} not found')
+            _logger.warning(f'无法发送 JSON：连接 {connection_id} 不存在')
             return
         try:
             await ws.send_json(data)
         except Exception as e:
-            logger.error(f'Failed to send json to {connection_id}: {e}')
+            _logger.error(f'向 {connection_id} 发送 JSON 失败：{e}')
 
     # 广播
     async def broadcast_text(self, message: str, *, group: str | None = None, exclude: set[str] | None = None) -> None:
@@ -236,6 +243,95 @@ class WSConnectionManager:
             return
 
         await gather(*[self.send_json(cid, data) for cid in targets])
+
+    # 元数据
+    def get_metadata(self, connection_id: str, key: str, default: Any = None) -> Any:
+        """获取连接元数据中的指定字段
+
+        Args:
+            connection_id: 连接ID
+            key: 元数据字段名
+            default: 不存在时的默认值
+
+        Returns:
+            元数据字段值，连接不存在或字段不存在时返回 default
+        """
+        return self._metadata.get(connection_id, {}).get(key, default)
+
+    def set_metadata(self, connection_id: str, key: str, value: Any) -> None:
+        """设置或更新连接元数据字段
+
+        Args:
+            connection_id: 连接ID
+            key: 元数据字段名
+            value: 元数据字段值
+
+        Raises:
+            KeyError: 连接不存在时抛出
+        """
+        if connection_id not in self._connections:
+            raise KeyError(f'连接 {connection_id} 不存在')
+        self._metadata[connection_id][key] = value
+
+    def get_all_metadata(self, connection_id: str) -> dict[str, Any]:
+        """获取连接的全部元数据
+
+        Args:
+            connection_id: 连接ID
+
+        Returns:
+            元数据字典副本，连接不存在时返回空字典
+        """
+        return dict(self._metadata.get(connection_id, {}))
+
+    # 心跳检测
+    async def ping(self, connection_id: str) -> bool:
+        """向指定连接发送心跳包，并更新最近心跳时间
+
+        发送应用层心跳包（空字节）检测连接活跃状态
+
+        Args:
+            connection_id: 连接ID
+
+        Returns:
+            True 表示发送成功，False 表示连接不存在或发送失败
+        """
+        ws = self._connections.get(connection_id)
+        if ws is None:
+            return False
+        try:
+            await ws.send_bytes(b'')
+            self._last_seen[connection_id] = time.monotonic()
+            return True
+        except Exception as e:
+            _logger.warning(f'WebSocket 心跳失败：{connection_id}，{e}')
+            return False
+
+    def update_heartbeat(self, connection_id: str) -> None:
+        """手动将指定连接的最近心跳时间更新为当前时刻
+
+        业务层收到消息时主动调用，避免被判定为失活连接
+
+        Args:
+            connection_id: 连接ID
+        """
+        if connection_id in self._last_seen:
+            self._last_seen[connection_id] = time.monotonic()
+
+    def get_stale_connections(self, timeout_seconds: float) -> list[str]:
+        """获取超过指定时间未收到心跳的失活连接列表
+
+        Args:
+            timeout_seconds: 心跳超时阈值（秒）
+
+        Returns:
+            失活连接ID列表
+        """
+        now = time.monotonic()
+        return [
+            cid for cid, last in self._last_seen.items()
+            if now - last > timeout_seconds
+        ]
 
     # 内部方法
     def _resolve_targets(self, group: str | None, exclude: set[str] | None) -> set[str]:
@@ -289,12 +385,20 @@ class WSConnectionManager:
         return connection_id in self._connections
 
     def __len__(self) -> int:
+        """返回当前活跃连接总数"""
         return len(self._connections)
 
     def __contains__(self, connection_id: str) -> bool:
+        """检查指定连接是否已注册
+
+        Args:
+            connection_id: 连接ID
+
+        Returns:
+            若连接已注册则返回 True
+        """
         return connection_id in self._connections
 
     def __repr__(self) -> str:
+        """返回连接管理器的可读字符串表示"""
         return f'{self.__class__.__name__}(active={len(self._connections)}, groups={list(self._groups.keys())})'
-
-

@@ -3,34 +3,40 @@
 @CreateDate : 2026/5/14
 @Description: Lumary 应用核心类与生命周期管理
 """
-from collections.abc import AsyncGenerator
+import sys
+import time
 from contextlib import asynccontextmanager
 from importlib import import_module
 from logging import getLogger
 from pathlib import Path
-from typing import Any
+from typing import Any, Self, AsyncGenerator
 
 from fastapi import FastAPI, APIRouter, Request
+from starlette.middleware import Middleware
+from starlette.middleware.cors import CORSMiddleware
+from starlette.routing import Mount
 
 from .__version__ import (
     __version__ as lumary_version
 )
 from .common import set_log_level
-from .handlers import setup_exception_handlers
+from .handlers import build_exception_handlers
 from .lifespan import (
     HookRegistry,
-    _default_registry,
+    default_registry,
     fastapi_lifespan
 )
-from .middleware import setup_middlewares
-from .openapi import setup_custom_openapi
+from .middleware import RequestIdMiddleware
+from .openapi import configure_openapi_schema
 from .schemas import (
     SystemHealthOut,
+    SystemInfoOut,
+    SystemMetricsOut,
     APIResponse,
     response_success
 )
 
-logger = getLogger(__name__)
+_logger = getLogger(__name__)
 
 # 默认元数据常量
 _DEFAULT_TERMS_OF_SERVICE = 'https://www.zarkhan.com/terms/'
@@ -46,7 +52,7 @@ class Lumary(FastAPI):
     """
 
     # 减少内存占用 + 提升属性访问速度
-    __slots__ = ('is_sub_app', '_hook_registry')
+    __slots__ = ('is_sub_app', '_hook_registry', '_start_time')
 
     def __init__(
             self,
@@ -82,25 +88,50 @@ class Lumary(FastAPI):
         """
         # 设置属性
         self.is_sub_app = is_sub_app
-        self._hook_registry = hook_registry if (hook_registry is not None) else _default_registry
+        self._hook_registry = hook_registry if (hook_registry is not None) else default_registry
 
         # 如果是子应用
         if self.is_sub_app:
             # 清空子应用根路径
             if 'root_path' in kwargs:
                 kwargs.pop('root_path')
-                logger.debug(f'The sub-app [{self.title}] root_path has been automatically cleared')
+                _logger.debug(f'子应用 [{title}] 的 root_path 已被自动清除')
 
             # 清空子应用生命周期管理
             if 'lifespan' in kwargs:
                 kwargs.pop('lifespan')
-                logger.debug(f'The sub-app [{self.title}] lifespan has been automatically cleared')
+                _logger.debug(f'子应用 [{title}] 的 lifespan 已被自动清除')
+
+        # 默认中间件
+        middlewares = [
+            Middleware(
+                RequestIdMiddleware,  # type: ignore
+            )
+        ]
+
+        # 添加 CORS 中间件
+        if enable_cors:
+            middlewares.append(
+                Middleware(
+                    CORSMiddleware,  # type: ignore
+                    allow_origins=allow_origins or ['*'],
+                    allow_credentials=(allow_origins or ['*']) != ['*'],
+                    allow_methods=allow_methods or ['*'],
+                    allow_headers=allow_headers or ['*'],
+                )
+            )
 
         # 设置默认值
         kwargs.setdefault('terms_of_service', _DEFAULT_TERMS_OF_SERVICE)
         kwargs.setdefault('contact', _DEFAULT_CONTACT)
         kwargs.setdefault('license_info', _DEFAULT_LICENSE_INFO)
+        # 设置默认中间件
+        kwargs.setdefault('middleware', middlewares)
+        # 设置应用生命周期管理
         kwargs.setdefault('lifespan', self._application_lifespan)
+        # 在父类初始化前注入异常处理器
+        # middleware stack 采用懒加载模式（首次请求时构建），但通过构造函数参数传入是注入 handler 的标准方式
+        kwargs.setdefault('exception_handlers', build_exception_handlers())
 
         # 如果非调试模式 → 关闭文档、设置日志级别
         if not debug:
@@ -121,51 +152,76 @@ class Lumary(FastAPI):
             **kwargs
         )
 
+        # 记录应用启动时间
+        self._start_time: float = time.time()
+
         # 设置自定义文档
-        setup_custom_openapi(self)
-
-        # 设置中间件（主应用和子应用都需要注册，FastAPI 挂载机制中，子应用的中间件会优先于主应用触发）
-        setup_middlewares(
-            self,
-            enable_cors=enable_cors,
-            allow_origins=allow_origins,
-            allow_methods=allow_methods,
-            allow_headers=allow_headers,
-        )
-
-        # 设置异常处理（主应用和子应用都需要独立注册异常处理器，否则子应用路由抛错无法被捕获）
-        setup_exception_handlers(self)
+        configure_openapi_schema(self)
 
         # 如果不是子应用
         if not is_sub_app:
             # 注册系统内置接口
             self._register_system_endpoints()
 
-
     def _register_system_endpoints(self) -> None:
-        """注册系统内置接口（健康检查、指标等）"""
+        """注册系统内置接口（健康检查、详细信息、运行指标）"""
         router = APIRouter(prefix='/system', tags=['system'])
 
-        @router.get('/health', summary='系统健康检查')
+        @router.get('/health', summary='健康检查')
         async def health(_request: Request) -> APIResponse[SystemHealthOut]:
             """服务健康检查
 
             Returns:
                 响应数据
             """
-            data = SystemHealthOut(name=self.title, version=self.version, debug=self.debug)
+            data = SystemHealthOut(
+                name=self.title,
+                version=self.version,
+                debug=self.debug
+            )
             return response_success(data=data, message='服务运行正常')
 
-        # 预留未来可能添加的其他系统接口
-        # @router.get('/metrics', summary='系统运行指标')
-        # async def metrics(_request: Request): .
+        @router.get('/info', summary='详细信息')
+        async def info(_request: Request) -> APIResponse[SystemInfoOut]:
+            """查看应用详细信息
 
-        # @router.get('/info', summary='系统详细信息')
-        # async def sys_info(_request: Request): .
+            Args:
+                _request: 请求对象
+
+            Returns:
+                响应数据
+            """
+            data = SystemInfoOut(
+                name=self.title,
+                version=self.version,
+                debug=self.debug,
+                sub_apps_count=sum(1 for r in self.routes if isinstance(r, Mount)),
+                routes_count=len(self.routes),
+                python_version=sys.version,
+            )
+            return response_success(data=data, message='获取成功')
+
+        @router.get('/metrics', summary='运行指标')
+        async def metrics(_request: Request) -> APIResponse[SystemMetricsOut]:
+            """查看应用运行指标
+
+            Args:
+                _request: 请求对象
+
+            Returns:
+                响应数据
+            """
+            uptime = round(time.time() - self._start_time, 3)
+            memory_mb = -1
+            data = SystemMetricsOut(
+                uptime_seconds=uptime,
+                memory_mb=memory_mb,
+            )
+            return response_success(data=data, message='获取成功')
 
         self.include_router(router)
 
-    def _load_sub_app(self, module_path: str, app_name: str) -> 'Lumary | None':
+    def _load_sub_app(self, module_path: str, app_name: str) -> Self | None:
         """动态导入单个子应用
 
         Args:
@@ -181,24 +237,23 @@ class Lumary(FastAPI):
             sub_app = getattr(module, app_name, None)
 
             if sub_app is None:
-                logger.warning(
-                    f'subapplication loading failed: variable {app_name} not found in '
-                    f'module {module_path}, please check module and __init__.py configuration'
+                _logger.warning(
+                    f'子应用加载失败：在模块 {module_path} 中未找到变量 {app_name}，'
+                    f'请检查模块配置与 __init__.py 是否正确'
                 )
-            elif not isinstance(sub_app, type(self)):
-                logger.warning(
-                    f'sub-application type does not match: {module_path}.{app_name} '
-                    f'Not a legitimate Lumary application instance'
+            elif not isinstance(sub_app, self.__class__):
+                _logger.warning(
+                    f'子应用类型不匹配：{module_path}.{app_name} 不是合法的 Lumary 应用实例'
                 )
             else:
                 return sub_app
 
         except Exception as e:
-            logger.warning(f'Could not import module: {module_path}, reason: {e}', exc_info=True)
+            _logger.warning(f'无法导入模块：{module_path}，原因：{e}', exc_info=True)
 
         return None
 
-    def mount_sub_apps(self, apps_path: str | Path = './apps') -> None:
+    def mount_sub_apps(self, apps_path: str | Path = './apps') -> list[Self]:
         """挂载子应用
 
         Args:
@@ -207,13 +262,13 @@ class Lumary(FastAPI):
         apps_path = Path(apps_path)
 
         if not apps_path.exists():
-            err_msg = f'Directory {apps_path} does not exist, exit program'
-            logger.error(err_msg, exc_info=True)
+            err_msg = f'目录 {apps_path} 不存在，程序退出'
+            _logger.error(err_msg, exc_info=True)
             raise RuntimeError(err_msg)
 
         apps_folder_name = apps_path.name
 
-        logger.info('Starting to mount sub-applications')
+        _logger.info('开始挂载子应用')
         success_mounted_list = []
         # 遍历目录
         for path in apps_path.iterdir():
@@ -240,16 +295,16 @@ class Lumary(FastAPI):
                 # 如果当前实例是子应用 → 直接报错禁止
                 if self.is_sub_app:
                     raise RuntimeError(
-                        f'Mounting [{app.title}] sub-applications into [{self.title}] sub-applications '
-                        f'is prohibited'
+                        f'禁止将子应用 [{app.title}] 挂载到另一个子应用 [{self.title}] 下'
                     )
 
                 self.mount(mount_path, app, app_folder_name)
-                success_mounted_list.append(app.title)
-                logger.info(f'Successfully mounted the sub-application [{app.title} -> {mount_path}]')
+                success_mounted_list.append(app)
+                _logger.info(f'已成功挂载子应用 [{app.title} -> {mount_path}]')
 
         # 子应用挂载结束
-        logger.info(f'Sub-application mount complete, successfully mounted{success_mounted_list}')
+        _logger.info(f'子应用挂载完成，成功挂载 {[app.title for app in success_mounted_list]}')
+        return success_mounted_list
 
     @asynccontextmanager
     async def _application_lifespan(self, app: FastAPI) -> AsyncGenerator[None, None]:
@@ -259,7 +314,7 @@ class Lumary(FastAPI):
             app: FastAPI 应用实例
 
         Returns:
-             异步生成器
+            异步生成器
         """
         async with fastapi_lifespan(app, registry=self._hook_registry):
             yield
