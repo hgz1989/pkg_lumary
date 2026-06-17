@@ -13,7 +13,7 @@ from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException
 from starlette.responses import Response
 
-from .schemas import response_fail
+from .schemas import response_fail, response_with_extra_fail
 
 _logger = getLogger(__name__)
 
@@ -81,10 +81,10 @@ def build_exception_handlers() -> ExceptionHandlers:
         # JSON 格式非法（如 {invalid}）→ 400；字段校验失败 → 422
         if _is_json_parse_error(errors):
             http_status = status.HTTP_400_BAD_REQUEST
-            business_code = 400
+            business_code = status.HTTP_400_BAD_REQUEST
         else:
             http_status = status.HTTP_422_UNPROCESSABLE_CONTENT
-            business_code = 422
+            business_code = status.HTTP_422_UNPROCESSABLE_CONTENT
 
         _logger.error(f'请求参数校验失败: {error_msg}')
 
@@ -112,13 +112,25 @@ def build_exception_handlers() -> ExceptionHandlers:
             统一格式的 JSON 错误响应，HTTP 状态码与原异常一致
         """
         status_code = exc.status_code
+        data: dict[str, Any] = {'code': status_code}
 
-        _logger.error(f'HTTP {status_code}: {exc.detail}')
+        if exc.detail:
+            data['message'] = str(exc.detail)
 
-        resp = response_fail(
-            code=status_code,
-            message=str(exc.detail)
+        if exc.headers:
+            extra = dict(exc.headers)
+        else:
+            extra = None
+
+        _logger.error(
+            f'HTTP Exception: Status Code = {status_code}, Detail = {exc.detail}, Headers = {extra}'
         )
+
+        if extra:
+            data['extra'] = extra
+            resp = response_with_extra_fail(**data)
+        else:
+            resp = response_fail(**data)
         return JSONResponse(content=resp.model_dump(), status_code=status_code)
 
     # ── 第三层：未知异常兜底 ──
