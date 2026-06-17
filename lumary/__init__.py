@@ -66,6 +66,7 @@ from .lifespan import (
     on_shutdown,
     clear_hooks
 )
+from .router import LumaryRoute
 from .schemas import (
     SchemaBase,
     PageParams,
@@ -141,6 +142,8 @@ __all__ = [
     'on_startup',
     'on_shutdown',
     'clear_hooks',
+    # Router
+    'LumaryRoute',
     # Schema
     'SchemaBase',
     'PageParams',
