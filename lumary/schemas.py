@@ -33,7 +33,7 @@ class SchemaBase(BaseModel):
 
         # ✅ 4. 允许任意类型（支持泛型绑定 ORM 模型等）
         arbitrary_types_allowed=True,
-        
+
         # ✅ 5. 全局配置 datetime 序列化格式（原生支持，完美兼容 OpenAPI）
         json_encoders={
             datetime: lambda v: v.strftime('%Y-%m-%d %H:%M:%S')
@@ -123,10 +123,9 @@ class PageData(SchemaBase, Generic[T]):
 
 class APIResponseBase(SchemaBase):
     """底层基础响应，同时承载 data + extra 两套泛型"""
-    model_config = ConfigDict(extra='forbid')
     request_id: str = Field(description='请求唯一追踪ID')
     code: int = Field(default=0, description='状态码，0为成功，其他为错误')
-    message: str = Field(default='成功', description='提示信息')
+    message: str = Field(default='操作成功', description='提示信息')
 
 
 class APIResponse(APIResponseBase, Generic[T]):
@@ -195,7 +194,7 @@ def response_success(
 
 def response_fail(
         code: int,
-        message: str = '失败',
+        message: str,
         data: T | None = None
 ) -> APIResponse[T]:
     """返回失败响应
@@ -233,7 +232,7 @@ def response_with_extra_success(
 
 def response_with_extra_fail(
         code: int,
-        message: str | None = None,
+        message: str,
         data: T | None = None,
         extra: E | None = None
 ) -> APIResponseWithExtra[T, E]:
