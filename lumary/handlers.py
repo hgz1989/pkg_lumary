@@ -93,7 +93,7 @@ def build_exception_handlers() -> ExceptionHandlers:
             message=error_msg
         )
         return JSONResponse(
-            content=resp.model_dump(),
+            content=resp.model_dump(exclude_none=True),
             status_code=http_status
         )
 
@@ -131,7 +131,10 @@ def build_exception_handlers() -> ExceptionHandlers:
             resp = response_with_extra_fail(**data)
         else:
             resp = response_fail(**data)
-        return JSONResponse(content=resp.model_dump(), status_code=status_code)
+        return JSONResponse(
+            content=resp.model_dump(exclude_none=True),
+            status_code=status_code
+        )
 
     # ── 第三层：未知异常兜底 ──
     async def exception_handler(_request: Request, exc: Exception) -> JSONResponse:
@@ -155,7 +158,7 @@ def build_exception_handlers() -> ExceptionHandlers:
             message='系统内部错误，请联系管理员'
         )
         return JSONResponse(
-            content=resp.model_dump(),
+            content=resp.model_dump(exclude_none=True),
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR
         )
 

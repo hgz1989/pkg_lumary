@@ -7,7 +7,7 @@ from datetime import datetime
 from math import ceil
 from typing import TypeVar, Generic, Sequence, Any
 
-from pydantic import BaseModel, ConfigDict, Field, model_serializer
+from pydantic import BaseModel, ConfigDict, Field
 
 from .__version__ import __version__ as lumary_version
 from .common import get_request_id
@@ -32,39 +32,13 @@ class SchemaBase(BaseModel):
         extra='ignore',
 
         # ✅ 4. 允许任意类型（支持泛型绑定 ORM 模型等）
-        arbitrary_types_allowed=True
+        arbitrary_types_allowed=True,
+        
+        # ✅ 5. 全局配置 datetime 序列化格式（原生支持，完美兼容 OpenAPI）
+        json_encoders={
+            datetime: lambda v: v.strftime('%Y-%m-%d %H:%M:%S')
+        }
     )
-
-    @model_serializer(mode='wrap')
-    def _global_datetime_serialize(self, handler: Any) -> dict[str, Any]:
-        """全局模型序列化拦截器，递归处理所有 datetime 字段
-
-        Args:
-            handler: Pydantic 默认的模型序列化处理函数
-
-        Returns:
-            经过时间格式化处理的序列化字典
-        """
-        raw_data = handler(self)
-
-        def format_all_datetime(value: Any) -> Any:
-            """递归格式化数据结构中的 datetime 对象
-
-            Args:
-                value: 需要处理的数据节点
-
-            Returns:
-                格式化后的数据节点
-            """
-            if isinstance(value, datetime):
-                return value.strftime('%Y-%m-%d %H:%M:%S')
-            if isinstance(value, dict):
-                return {k: format_all_datetime(v) for k, v in value.items()}
-            if isinstance(value, list | tuple):
-                return [format_all_datetime(item) for item in value]
-            return value
-
-        return format_all_datetime(raw_data)
 
 
 class PageParams(SchemaBase):
@@ -149,6 +123,7 @@ class PageData(SchemaBase, Generic[T]):
 
 class APIResponseBase(SchemaBase):
     """底层基础响应，同时承载 data + extra 两套泛型"""
+    model_config = ConfigDict(extra='forbid')
     request_id: str = Field(description='请求唯一追踪ID')
     code: int = Field(default=0, description='状态码，0为成功，其他为错误')
     message: str = Field(default='成功', description='提示信息')
