@@ -4,13 +4,20 @@
 @Description: SQLAlchemy CRUD 泛型基类
 """
 from typing import TypeVar, Generic, Any, Sequence
-from functools import lru_cache
 
 from pydantic import BaseModel
-from sqlalchemy import inspect as sa_inspect, Select, text
+from sqlalchemy import (
+    inspect as sa_inspect,
+    insert,
+    func,
+    Select,
+    update,
+    delete,
+    select,
+    text
+)
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.sql import func, select
 
 from lumary.common.cache import cache
 from lumary.exceptions import ConflictError, BadRequestError
@@ -76,7 +83,6 @@ class CRUDBase(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
             创建成功的模型实例
         """
         obj_in_data = self._extract_model_data(obj_in)
-
         db_obj = self.model(**obj_in_data)
         self.db.add(db_obj)
         await self.db.flush()
@@ -102,20 +108,25 @@ class CRUDBase(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
         Returns:
             成功创建的模型实例列表
         """
-        # 场景 1：要求全部成功，且需要返回对象
+        # 场景 1：要求全部成功，且需要返回对象或直接入库
         if not ignore_errors:
+            if not return_objs:
+                # 高效批量插入，避免 ORM 实例化开销
+                insert_data = [self._extract_model_data(obj) for obj in objs_in]
+                if insert_data:
+                    await self.db.execute(insert(self.model).values(insert_data))
+                await self._invalidate_cache()
+                return []
+
             db_objs = []
 
             for obj_in in objs_in:
                 obj_data = self._extract_model_data(obj_in)
-
                 db_obj = self.model(**obj_data)
                 db_objs.append(db_obj)
 
             self.db.add_all(db_objs)
-
-            if return_objs:
-                await self.db.flush()
+            await self.db.flush()
 
             await self._invalidate_cache()
             return db_objs
@@ -126,7 +137,6 @@ class CRUDBase(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
 
         for obj_in in objs_in:
             obj_data = self._extract_model_data(obj_in)
-
             db_obj = self.model(**obj_data)
             self.db.add(db_obj)
 
@@ -236,7 +246,7 @@ class CRUDBase(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
             obj_id: Any = None,
             include_deleted: bool = False
     ) -> ModelType | None:
-        """物理删除记录
+        """物理删除单条记录
 
         Args:
             db_obj_in: 已存在的模型实例（优先使用）
@@ -261,13 +271,52 @@ class CRUDBase(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
         await self._invalidate_cache()
         return db_obj
 
+    async def remove_multi(
+            self,
+            *criteria: Any,
+            physical_delete: bool = False,
+            **kwargs: Any
+    ) -> int:
+        """批量删除记录（直接执行 SQL，不走 ORM 实例加载，性能极高）
+
+        支持根据模型自动选择软删除或物理删除
+
+        Args:
+            *criteria: SQLAlchemy 查询条件
+            physical_delete: 是否强制物理删除（如果模型支持软删除，默认走软删除更新）
+            **kwargs: 精确匹配的过滤条件
+
+        Returns:
+            影响的行数
+        """
+        is_soft_delete_supported = hasattr(self.model, 'is_deleted')
+
+        if is_soft_delete_supported and not physical_delete:
+            stmt = update(self.model).values(
+                is_deleted=True,
+                deleted_at=func.now()
+            ).where(self.model.is_deleted.is_(False))
+        else:
+            stmt = delete(self.model)
+
+        if criteria:
+            stmt = stmt.where(*criteria)
+
+        stmt = self._apply_kwargs_filter(stmt, kwargs)
+
+        result = await self.db.execute(stmt)
+        await self.db.flush()
+        await self._invalidate_cache()
+
+        return result.rowcount
+
     async def update(
             self,
             *,
             db_obj_in: ModelType,
             obj_in: UpdateSchemaType | dict[str, Any]
     ) -> tuple[ModelType, bool]:
-        """更新记录
+        """更新单条记录（ORM 对象级更新）
 
         Args:
             db_obj_in: 需要更新的数据库模型实例
@@ -296,6 +345,42 @@ class CRUDBase(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
             await self._invalidate_cache()
 
         return db_obj_in, has_real_change
+
+    async def update_multi(
+            self,
+            *criteria: Any,
+            obj_in: UpdateSchemaType | dict[str, Any],
+            **kwargs: Any
+    ) -> int:
+        """批量更新记录（直接执行 SQL，不走 ORM 实例加载，性能极高）
+
+        Args:
+            *criteria: SQLAlchemy 查询条件
+            obj_in: 包含更新数据的字典或 Pydantic 模型
+            **kwargs: 精确匹配的过滤条件
+
+        Returns:
+            影响的行数
+        """
+        update_data = self._extract_model_data(obj_in, exclude_unset=True)
+        if not update_data:
+            return 0
+
+        stmt = update(self.model).values(**update_data)
+
+        # 支持软删除过滤，避免意外更新到已删除的数据
+        stmt = self._apply_soft_delete_filter(stmt)
+
+        if criteria:
+            stmt = stmt.where(*criteria)
+
+        stmt = self._apply_kwargs_filter(stmt, kwargs)
+
+        result = await self.db.execute(stmt)
+        await self.db.flush()
+        await self._invalidate_cache()
+
+        return result.rowcount
 
     async def get(
             self,
@@ -340,12 +425,11 @@ class CRUDBase(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
 
         return stmt
 
-    @lru_cache(maxsize=128)
     def _validate_kwargs_keys(self, keys: tuple[str, ...]) -> set[str]:
-        """缓存验证 kwargs 键是否合法
+        """验证 kwargs 键是否合法
 
         Args:
-            keys: 参数键的元组（使用元组以便可被哈希缓存）
+            keys: 参数键的元组
 
         Returns:
             无效的字段集合
@@ -401,8 +485,11 @@ class CRUDBase(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
         if options:
             stmt = stmt.options(*options)
 
+        # 优化：添加 limit(2) 防止多条数据时的全表扫描，2条足够触发 scalar_one_or_none 的多条报错
+        stmt = stmt.limit(2)
+
         result = await self.db.execute(stmt)
-        return result.scalar_one_or_none()
+        return result.unique().scalar_one_or_none()
 
     async def get_count(
             self,
@@ -468,13 +555,16 @@ class CRUDBase(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
 
         if order_by is not None:
             stmt = stmt.order_by(*order_by) if isinstance(order_by, (list, tuple)) else stmt.order_by(order_by)
+        elif hasattr(self.model, 'id'):
+            # 分页必须有确定性排序，否则可能出现数据重复或遗漏
+            stmt = stmt.order_by(self.model.id.desc())
 
         if options:
             stmt = stmt.options(*options)
 
         stmt = stmt.offset(skip).limit(limit)
         result = await self.db.execute(stmt)
-        return result.scalars().all()
+        return result.scalars().unique().all()
 
     async def get_page(
             self,
@@ -508,6 +598,10 @@ class CRUDBase(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
             include_deleted=include_deleted,
             **kwargs
         )
+
+        if total == 0:
+            return PageData.build(items=[], page=page, size=size, total=0)
+
         items = await self.get_multi(
             *criteria,
             skip=skip,
