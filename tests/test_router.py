@@ -9,7 +9,7 @@ from fastapi.responses import JSONResponse
 from fastapi.testclient import TestClient
 from pydantic import BaseModel
 
-from lumary.router import LumaryRoute
+from lumary.route import LumaryRoute
 from lumary.common.context import set_request_id
 
 

@@ -66,7 +66,7 @@ from .lifespan import (
     on_shutdown,
     clear_hooks
 )
-from .router import LumaryRoute
+from .route import LumaryRoute
 from .schemas import (
     SchemaBase,
     PageParams,
