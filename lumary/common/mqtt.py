@@ -58,7 +58,7 @@ class MqttManager:
     """
     __slots__ = ('client', 'handlers', 'enabled', '_listen_task')
 
-    def __init__(self) -> None:
+    def __init__(self):
         """初始化"""
         self.client: Client | None = None
         self.handlers: dict[str, list[Callable]] = {}
@@ -114,14 +114,15 @@ class MqttManager:
             payload: 消息负载（如果是 dict 将自动转为 JSON 字符串）
             **kwargs: 透传给 publish 的其他参数 (如 qos, retain)
         """
-        if not self.enabled or not self.client:
+        mqtt_c = self.client
+        if not self.enabled or not mqtt_c:
             return
 
         if isinstance(payload, dict):
             payload = json_dumps(payload)
 
         try:
-            await self.client.publish(topic, payload, **kwargs)
+            await mqtt_c.publish(topic, payload, **kwargs)
         except Exception as e:
             _logger.error(f'MQTT 发布消息失败 [{topic}]: {e}')
 

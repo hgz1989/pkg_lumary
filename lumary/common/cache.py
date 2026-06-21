@@ -69,10 +69,11 @@ class CacheManager:
         Returns:
             解析后的缓存数据，不存在或未开启时返回 None
         """
-        if not self.enabled or not self.redis:
+        redis_client = self.redis
+        if not self.enabled or not redis_client:
             return None
         try:
-            val = await self.redis.get(key)
+            val = await redis_client.get(key)
             return json_loads(val) if val else None
         except Exception as e:
             _logger.error(f'Redis get 错误: {e}')
@@ -86,10 +87,11 @@ class CacheManager:
             value: 缓存数据（需可被 json 序列化）
             expire: 过期时间（秒）
         """
-        if not self.enabled or not self.redis:
+        redis_client = self.redis
+        if not self.enabled or not redis_client:
             return
         try:
-            await self.redis.set(key, json_dumps(value), ex=expire)
+            await redis_client.set(key, json_dumps(value), ex=expire)
         except Exception as e:
             _logger.error(f'Redis set 错误: {e}')
 
@@ -99,10 +101,11 @@ class CacheManager:
         Args:
             key: 缓存键
         """
-        if not self.enabled or not self.redis:
+        redis_client = self.redis
+        if not self.enabled or not redis_client:
             return
         try:
-            await self.redis.delete(key)
+            await redis_client.delete(key)
         except Exception as e:
             _logger.error(f'Redis delete 错误: {e}')
 
@@ -114,15 +117,16 @@ class CacheManager:
         Args:
             namespace: 命名空间前缀
         """
-        if not self.enabled or not self.redis:
+        redis_client = self.redis
+        if not self.enabled or not redis_client:
             return
         try:
             cursor = 0
             match_pattern = f'{namespace}:*'
             while True:
-                cursor, keys = await self.redis.scan(cursor=cursor, match=match_pattern, count=100)
+                cursor, keys = await redis_client.scan(cursor=cursor, match=match_pattern, count=100)
                 if keys:
-                    await self.redis.delete(*keys)
+                    await redis_client.delete(*keys)
                 if cursor == 0:
                     break
         except Exception as e:
