@@ -3,7 +3,7 @@
 @CreateDate : 2026/5/14
 @Description: SQLAlchemy CRUD 泛型基类
 """
-from typing import TypeVar, Generic, Any, Sequence, TypeGuard
+from typing import TypeVar, Generic, Any, Sequence
 from functools import lru_cache
 
 from pydantic import BaseModel
@@ -12,12 +12,10 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql import func, select
 
-from lumary.common.mixins.sqlalchemy import SoftDeleteMixin
 from lumary.common.cache import cache
-from lumary.exceptions import ConflictError, NotFoundError, BadRequestError
+from lumary.exceptions import ConflictError, BadRequestError
 from lumary.schemas import PageData
 from .model import ModelBase
-
 
 ModelType = TypeVar('ModelType', bound=ModelBase)
 CreateSchemaType = TypeVar('CreateSchemaType', bound=BaseModel)
@@ -47,7 +45,7 @@ class CRUDBase(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
         mapper = sa_inspect(self.model)
 
         self.valid_columns = {col.key for col in mapper.mapper.column_attrs}
-        
+
         # 缓存命名空间（表名）
         self.cache_namespace = f'cache:{self.model.__tablename__}'
 
@@ -55,16 +53,17 @@ class CRUDBase(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
         """内部方法：触发缓存命名空间清理"""
         await cache.clear_namespace(self.cache_namespace)
 
-    async def create(self, *, obj_in: CreateSchemaType) -> ModelType:
+    async def create(self, *, obj_in: CreateSchemaType | dict) -> ModelType:
         """创建新记录
 
         Args:
-            obj_in: 创建记录的 Pydantic 模型
+            obj_in: 创建记录的 Pydantic 模型或 dict
 
         Returns:
             创建成功的模型实例
         """
-        obj_in_data = {k: v for k, v in obj_in.model_dump(exclude_unset=True).items() if k in self.valid_columns}
+        raw = obj_in if isinstance(obj_in, dict) else obj_in.model_dump()
+        obj_in_data = {k: v for k, v in raw.items() if k in self.valid_columns}
 
         db_obj = self.model(**obj_in_data)
         self.db.add(db_obj)
@@ -96,8 +95,8 @@ class CRUDBase(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
             db_objs = []
 
             for obj_in in objs_in:
-                obj_data = obj_in if isinstance(obj_in, dict) else obj_in.model_dump()
-                obj_data = {k: v for k, v in obj_data.items() if k in self.valid_columns}
+                raw = obj_in if isinstance(obj_in, dict) else obj_in.model_dump()
+                obj_data = {k: v for k, v in raw.items() if k in self.valid_columns}
 
                 db_obj = self.model(**obj_data)
                 db_objs.append(db_obj)
@@ -133,111 +132,164 @@ class CRUDBase(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
 
         if successful_objs:
             await self._invalidate_cache()
-            
+
         return successful_objs
 
-    async def _update_soft_del_flag(self, obj_id: Any, is_deleted: bool) -> ModelType:
+    async def _update_soft_del_flag(
+            self,
+            *,
+            db_obj_in: ModelType | None = None,
+            obj_id: Any | None = None,
+            is_deleted: bool
+    ) -> ModelType | None:
         """统一处理软删除/恢复的公共逻辑
 
         Args:
+            db_obj_in: 已存在的模型实例（优先使用）
             obj_id: 记录主键
             is_deleted: 是否软删除
 
         Returns:
-            被删除或恢复的实例
+            被删除或恢复的实例或为空
         """
-        if not issubclass(self.model, SoftDeleteMixin):
-            raise NotImplementedError('模型不支持软删除')
-
         # 区分：删除查正常数据，恢复要查已删除数据
+        # 第一步：参数合法性校验
+        if db_obj_in is None and obj_id is None:
+            raise BadRequestError('必须传入对象实例或主键ID中的至少一个')
+
+        if db_obj_in is None:
+            include_deleted = not is_deleted
+            db_obj = await self.get(obj_id, include_deleted=include_deleted)
+        else:
+            db_obj = db_obj_in
+
+        # 数据不存在直接返回
+        if not db_obj:
+            return db_obj
+
+        # 统一校验：模型是否支持软删除（仅判断一次，消除重复代码）
+        op_text = '软删除' if is_deleted else '恢复'
+        if hasattr(db_obj, 'is_deleted'):
+            # 状态冲突拦截：已是目标状态则禁止操作
+            if db_obj.is_deleted == is_deleted:
+                if is_deleted:
+                    msg = '当前数据已删除，不支持执行删除操作'
+                else:
+                    msg = '当前数据未删除，不支持执行恢复操作'
+
+                raise ConflictError(msg)
+        else:
+            raise ConflictError(f'对象实例不支持{op_text}操作')
+
+        # 更新软删除标识
         if is_deleted:
-            db_obj = await self.get(obj_id)
             db_obj.is_deleted = True
             db_obj.deleted_at = func.now()
         else:
-            db_obj = await self.get(obj_id, include_deleted=True)
-
-            # 必须判空，因为可能返回 None
-            if db_obj is None:
-                raise NotFoundError(f'{self.model.__name__}记录不存在: id={obj_id}')
-
-            # 有对象才能操作属性
-            if not db_obj.is_deleted:
-                raise ConflictError('当前数据未删除，不支持执行恢复操作')
-
             db_obj.is_deleted = False
             db_obj.deleted_at = None
 
         await self.db.flush()
         await self.db.refresh(db_obj)
         await self._invalidate_cache()
+
         return db_obj
 
-    async def soft_delete(self, *, obj_id: Any) -> ModelType:
+    async def soft_delete(self, *, db_obj_in: ModelType | None = None, obj_id: Any) -> ModelType | None:
         """软删除记录
 
         Args:
+            db_obj_in: 已存在的模型实例（优先使用）
             obj_id: 记录主键
 
         Returns:
-            返回被删除的实例
+            返回被删除的实例或为空
         """
-        return await self._update_soft_del_flag(obj_id=obj_id, is_deleted=True)
+        return await self._update_soft_del_flag(db_obj_in=db_obj_in, obj_id=obj_id, is_deleted=True)
 
-    async def restore(self, *, obj_id: Any) -> ModelType:
+    async def restore(self, *, db_obj_in: ModelType | None = None, obj_id: Any) -> ModelType | None:
         """恢复软删除的记录
 
         Args:
+            db_obj_in: 已存在的模型实例（优先使用）
             obj_id: 记录主键
 
         Returns:
-            返回被恢复的实例
+            返回被恢复的实例或为空
         """
-        return await self._update_soft_del_flag(obj_id=obj_id, is_deleted=False)
+        return await self._update_soft_del_flag(db_obj_in=db_obj_in, obj_id=obj_id, is_deleted=False)
 
-    async def remove(self, *, db_obj: ModelType | None = None, obj_id: Any = None) -> ModelType:
+    async def remove(
+            self,
+            *,
+            db_obj_in: ModelType | None = None,
+            obj_id: Any = None,
+            include_deleted: bool = False
+    ) -> ModelType | None:
         """物理删除记录
 
         Args:
-            db_obj: 已存在的模型实例（优先使用）
+            db_obj_in: 已存在的模型实例（优先使用）
             obj_id: 记录主键（obj 不存在时使用）
+            include_deleted: 是否包含软删除的数据
 
         Returns:
-            被删除的模型实例
+            被删除的模型实例或为空
         """
         # 第一步：参数合法性校验
-        if db_obj is None and obj_id is None:
-            raise BadRequestError('必须传入db_obj或obj_id中的至少一个')
+        if db_obj_in is None and obj_id is None:
+            raise BadRequestError('必须传入对象实例或主键ID中的至少一个')
 
-        # 如果已经传入 obj，直接使用，不再查库
+        # 无实例则根据ID查询
+        db_obj = db_obj_in or (await self.get(obj_id, include_deleted=include_deleted))
+
         if db_obj is None:
-            db_obj = await self.get(obj_id)
+            return None
 
         await self.db.delete(db_obj)
         await self.db.flush()
         await self._invalidate_cache()
         return db_obj
 
-    async def update(self, *, db_obj: ModelType, obj_in: UpdateSchemaType | dict[str, Any]) -> ModelType:
+    async def update(
+            self,
+            *,
+            db_obj_in: ModelType,
+            obj_in: UpdateSchemaType | dict[str, Any]
+    ) -> tuple[ModelType, bool]:
         """更新记录
 
         Args:
-            db_obj: 需要更新的数据库模型实例
+            db_obj_in: 需要更新的数据库模型实例
             obj_in: 包含更新数据的字典或 Pydantic 模型
 
         Returns:
-            更新后的模型实例
+            更新后的模型实例和是否发生实际更新
         """
-        update_data = obj_in if isinstance(obj_in, dict) else obj_in.model_dump(exclude_unset=True)
-        update_data = {k: v for k, v in update_data.items() if k in self.valid_columns}
+        if hasattr(db_obj_in, 'is_deleted') and db_obj_in.is_deleted:
+            raise BadRequestError('该数据已被删除，无法执行更新操作')
 
-        for field, value in update_data.items():
-            setattr(db_obj, field, value)
+        has_real_change = False
+        raw = obj_in if isinstance(obj_in, dict) else obj_in.model_dump(exclude_unset=True)
 
-        await self.db.flush()
-        await self.db.refresh(db_obj)
-        await self._invalidate_cache()
-        return db_obj
+        for field, value in raw.items():
+            # 跳过不允许更新的字段
+            if field not in self.valid_columns:
+                continue
+
+            old_val = getattr(db_obj_in, field)
+
+            if old_val != value:
+                has_real_change = True
+                # 只有值真正不一样才赋值
+                setattr(db_obj_in, field, value)
+
+        if has_real_change:
+            await self.db.flush()
+            await self.db.refresh(db_obj_in)
+            await self._invalidate_cache()
+
+        return db_obj_in, has_real_change
 
     async def get(
             self,
@@ -246,24 +298,23 @@ class CRUDBase(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
             options: list | None = None,
             include_deleted: bool = False,
             **kwargs: Any
-    ) -> ModelType:
+    ) -> ModelType | None:
         """根据主键获取单条记录
 
         Args:
             obj_id: 记录主键
             options: SQLAlchemy 加载策略列表
             include_deleted: 是否包含软删除的数据
-            **kwargs: 精确匹配的过滤条件键值对
+            **kwargs: 透传给 Session.get() 的其他参数 (如 with_for_update=True)
 
         Returns:
             查询到的模型实例或为空
         """
         db_obj = await self.db.get(self.model, obj_id, options=options, **kwargs)
 
-        if (db_obj is None) or (
-                self.is_soft_delete_model(db_obj) and not include_deleted and db_obj.is_deleted
-        ):
-            raise NotFoundError(f'{self.model.__name__}记录不存在或已删除: id={obj_id}')
+        if db_obj and hasattr(db_obj, 'is_deleted'):
+            if not include_deleted and db_obj.is_deleted:
+                return None
 
         return db_obj
 
@@ -278,10 +329,11 @@ class CRUDBase(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
         Returns:
             添加了软删除过滤条件的查询语句
         """
-        if issubclass(self.model, SoftDeleteMixin):
+        if hasattr(self.model, 'is_deleted'):
             stmt = stmt.where(self.model.is_deleted.is_(False))
 
         return stmt
+
     @lru_cache(maxsize=128)
     def _validate_kwargs_keys(self, keys: tuple[str, ...]) -> set[str]:
         """缓存验证 kwargs 键是否合法
@@ -492,15 +544,3 @@ class CRUDBase(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
             SQL 执行结果
         """
         return await self.db.execute(text(sql), params or {})
-
-    @staticmethod
-    def is_soft_delete_model(obj: ModelBase) -> TypeGuard[SoftDeleteMixin]:
-        """判断对象是否为软删除模型
-
-        Args:
-            obj: 要判断的对象
-
-        Returns:
-            是否为软删除模型
-        """
-        return isinstance(obj, SoftDeleteMixin)

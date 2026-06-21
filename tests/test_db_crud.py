@@ -6,7 +6,7 @@
 import pytest
 from pydantic import BaseModel
 from sqlalchemy import String
-from lumary.exceptions import NotFoundError, BadRequestError
+from lumary.exceptions import NotFoundError, BadRequestError, ConflictError
 from sqlalchemy.orm import Mapped, mapped_column
 
 from lumary.db.sqlalchemy.base import Base
@@ -192,9 +192,9 @@ class TestGet:
         assert fetched.id == obj.id
         assert fetched.name == 'Carol'
 
-    async def test_get_nonexistent_raises(self, user_crud):
-        with pytest.raises(NotFoundError):
-            await user_crud.get('nonexistent-id')
+    async def test_get_nonexistent_returns_none(self, user_crud):
+        result = await user_crud.get('nonexistent-id')
+        assert result is None
 
     async def test_get_with_options(self, user_crud):
         """测试带 options 查询不报错"""
@@ -206,8 +206,8 @@ class TestGet:
         assert found.name == 'GetOpt'
 
     async def test_get_with_deleted_returns_none_for_missing(self, post_crud):
-        with pytest.raises(NotFoundError):
-            await post_crud.get('nope', include_deleted=True)
+        result = await post_crud.get('nope', include_deleted=True)
+        assert result is None
 
 
 # ──────────────────────────────────────────────
@@ -305,33 +305,37 @@ class TestGetPage:
 class TestUpdate:
     async def test_update_with_schema(self, user_crud):
         obj = await user_crud.create(obj_in=_UserCreate(name='UpdOld', age=1))
-        updated = await user_crud.update(db_obj=obj, obj_in=_UserUpdate(name='UpdNew'))
+        updated, changed = await user_crud.update(db_obj_in=obj, obj_in=_UserUpdate(name='UpdNew'))
         assert updated.name == 'UpdNew'
-
-    async def test_update_with_dict(self, user_crud):
-        obj = await user_crud.create(obj_in=_UserCreate(name='DictOld', age=5))
-        updated = await user_crud.update(db_obj=obj, obj_in={'age': 99})
-        assert updated.age == 99
+        assert changed is True
 
     async def test_update_with_dict(self, user_crud):
         obj = await user_crud.create(obj_in=_UserCreate(name='Bob', age=30))
-        updated = await user_crud.update(db_obj=obj, obj_in={'name': 'BobDict', 'age': 32})
+        updated, changed = await user_crud.update(db_obj_in=obj, obj_in={'name': 'BobDict', 'age': 32})
         assert updated.name == 'BobDict'
         assert updated.age == 32
+        assert changed is True
 
     async def test_update_with_extra_fields(self, user_crud):
         """测试 Update Schema 中有多余字段"""
         obj = await user_crud.create(obj_in=_UserCreate(name='Extra', age=20))
-        # 强制传入一个包含额外字段的字典，因为 _UserUpdate 没有定义 extra_field
-        updated = await user_crud.update(db_obj=obj, obj_in={'name': 'Extra2', 'extra_field': 'hello'})
+        updated, changed = await user_crud.update(db_obj_in=obj, obj_in={'name': 'Extra2', 'extra_field': 'hello'})
         assert updated.name == 'Extra2'
         assert not hasattr(updated, 'extra_field')
+        assert changed is True
 
     async def test_update_ignores_invalid_fields(self, user_crud):
         """字典中不在 valid_columns 的字段应被过滤"""
         obj = await user_crud.create(obj_in=_UserCreate(name='FilterOld', age=3))
-        updated = await user_crud.update(db_obj=obj, obj_in={'name': 'FilterNew', 'bad_col': 'x'})
+        updated, changed = await user_crud.update(db_obj_in=obj, obj_in={'name': 'FilterNew', 'bad_col': 'x'})
         assert updated.name == 'FilterNew'
+        assert changed is True
+
+    async def test_update_no_real_change(self, user_crud):
+        """测试没有实际变更的情况"""
+        obj = await user_crud.create(obj_in=_UserCreate(name='NoChange', age=10))
+        updated, changed = await user_crud.update(db_obj_in=obj, obj_in={'name': 'NoChange', 'age': 10})
+        assert changed is False
 
 
 # ──────────────────────────────────────────────
@@ -340,24 +344,24 @@ class TestUpdate:
 class TestRemove:
     async def test_remove_by_obj(self, user_crud):
         obj = await user_crud.create(obj_in=_UserCreate(name='DelObj', age=1))
-        deleted = await user_crud.remove(db_obj=obj)
+        deleted = await user_crud.remove(db_obj_in=obj)
         assert deleted.id == obj.id
-        with pytest.raises(NotFoundError):
-            await user_crud.get(obj.id)
+        result = await user_crud.get(obj.id)
+        assert result is None
 
     async def test_remove_by_id(self, user_crud):
         obj = await user_crud.create(obj_in=_UserCreate(name='DelId', age=2))
         await user_crud.remove(obj_id=obj.id)
-        with pytest.raises(NotFoundError):
-            await user_crud.get(obj.id)
+        result = await user_crud.get(obj.id)
+        assert result is None
 
     async def test_remove_no_args_raises(self, user_crud):
         with pytest.raises(BadRequestError, match='必须传入'):
             await user_crud.remove()
 
-    async def test_remove_nonexistent_id_raises(self, user_crud):
-        with pytest.raises(NotFoundError):
-            await user_crud.remove(obj_id='ghost-id')
+    async def test_remove_nonexistent_id_returns_none(self, user_crud):
+        result = await user_crud.remove(obj_id='ghost-id')
+        assert result is None
 
 
 # ──────────────────────────────────────────────
@@ -373,8 +377,8 @@ class TestSoftDelete:
     async def test_soft_deleted_hidden_from_get(self, post_crud):
         obj = await post_crud.create(obj_in=_PostCreate(title='Hidden'))
         await post_crud.soft_delete(obj_id=obj.id)
-        with pytest.raises(NotFoundError):
-            await post_crud.get(obj.id)
+        result = await post_crud.get(obj.id)
+        assert result is None
 
     async def test_soft_deleted_visible_via_get_with_deleted(self, post_crud):
         obj = await post_crud.create(obj_in=_PostCreate(title='Visible'))
@@ -391,9 +395,9 @@ class TestSoftDelete:
         assert restored.deleted_at is None
 
     async def test_soft_delete_on_non_soft_model_raises(self, user_crud):
-        """普通模型（无 SoftDeleteMixin）调用软删除应抛出 NotImplementedError"""
+        """普通模型（无 SoftDeleteMixin）调用软删除应抛出 ConflictError"""
         obj = await user_crud.create(obj_in=_UserCreate(name='NonSoft', age=1))
-        with pytest.raises(NotImplementedError, match='不支持软删除'):
+        with pytest.raises(ConflictError, match='不支持软删除'):
             await user_crud.soft_delete(obj_id=obj.id)
 
     async def test_soft_delete_return_obj(self, post_crud):
@@ -405,7 +409,7 @@ class TestSoftDelete:
 
     async def test_restore_unsupported_model(self, user_crud):
         obj = await user_crud.create(obj_in=_UserCreate(name='NoRestore', age=1))
-        with pytest.raises(NotImplementedError):
+        with pytest.raises(ConflictError):
             await user_crud.restore(obj_id=obj.id)
 
     async def test_restore_success(self, post_crud):
@@ -414,8 +418,8 @@ class TestSoftDelete:
         await post_crud.soft_delete(obj_id=obj.id)
 
         # 已软删除，正常 get 查不到
-        with pytest.raises(NotFoundError):
-            await post_crud.get(obj.id)
+        result = await post_crud.get(obj.id)
+        assert result is None
 
         # 恢复
         restored_obj = await post_crud.restore(obj_id=obj.id)
