@@ -58,7 +58,7 @@ class MqttManager:
     """
     __slots__ = ('client', 'handlers', 'enabled', '_listen_task')
 
-    def __init__(self):
+    def __init__(self) -> None:
         """初始化"""
         self.client: Client | None = None
         self.handlers: dict[str, list[Callable]] = {}

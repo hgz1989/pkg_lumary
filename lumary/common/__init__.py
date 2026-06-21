@@ -3,6 +3,7 @@
 @CreateDate : 2026/5/14
 @Description: Lumary 模块
 """
+from .cache import cache, cache_response
 from .context import (
     request_id_ctx_var,
     generate_request_id,
@@ -10,7 +11,6 @@ from .context import (
     get_request_id
 )
 from .logger import set_log_level, set_log_format, setup_logger
-from .cache import cache, cache_response
 from .mqtt import mqtt_client, topic_matches
 
 __all__ = [
