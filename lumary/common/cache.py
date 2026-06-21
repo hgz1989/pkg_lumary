@@ -6,24 +6,19 @@
 import hashlib
 from functools import wraps
 from logging import getLogger
-from typing import Any, Callable
+from typing import Any, Callable, TYPE_CHECKING
 
 from fastapi import Request
 from pydantic import BaseModel
 
 from lumary.common.utils.strings import json_loads, json_dumps
 
-_logger = getLogger(__name__)
-
-# 尝试导入 redis，如果没有安装则降级为无操作模式
-try:
-    import redis.asyncio as aioredis
+if TYPE_CHECKING:
     from redis.asyncio import Redis
-    REDIS_INSTALLED = True
-except ImportError:
-    REDIS_INSTALLED = False
+else:
     Redis = Any
-    aioredis = Any  # type: ignore
+
+_logger = getLogger(__name__)
 
 
 class CacheManager:
@@ -45,7 +40,9 @@ class CacheManager:
         Args:
             url: Redis 连接 URL (如 redis://localhost:6379/0)
         """
-        if not REDIS_INSTALLED:
+        try:
+            import redis.asyncio as aioredis
+        except ImportError:
             _logger.warning('未安装 redis 依赖，缓存功能已禁用。可使用 pip install lumary[redis] 安装')
             return
 

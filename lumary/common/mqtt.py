@@ -5,21 +5,16 @@
 """
 import asyncio
 from logging import getLogger
-from typing import Any, Callable
+from typing import Any, Callable, TYPE_CHECKING
 
 from lumary.common.utils.strings import json_dumps
 
-_logger = getLogger(__name__)
-
-# 尝试导入 aiomqtt，如果没有安装则降级为无操作模式
-try:
-    import aiomqtt
+if TYPE_CHECKING:
     from aiomqtt import Client
-    MQTT_INSTALLED = True
-except ImportError:
-    MQTT_INSTALLED = False
+else:
     Client = Any
-    aiomqtt = Any  # type: ignore
+
+_logger = getLogger(__name__)
 
 
 def topic_matches(pattern: str, topic: str) -> bool:
@@ -91,7 +86,9 @@ class MqttManager:
             port: MQTT Broker 端口
             **kwargs: 透传给 aiomqtt.Client 的其他参数 (如 username, password)
         """
-        if not MQTT_INSTALLED:
+        try:
+            import aiomqtt  # noqa: F401
+        except ImportError:
             _logger.warning('未安装 aiomqtt 依赖，MQTT 功能已禁用。可使用 pip install lumary[mqtt] 安装')
             return
 
@@ -149,6 +146,8 @@ class MqttManager:
             port: 端口
             kwargs: 其他连接参数
         """
+        import aiomqtt
+
         while self.enabled:
             try:
                 async with aiomqtt.Client(hostname, port=port, **kwargs) as client:
