@@ -17,12 +17,13 @@ _logger = getLogger(__name__)
 
 # 尝试导入 redis，如果没有安装则降级为无操作模式
 try:
-    import redis.asyncio as redis
+    import redis.asyncio as aioredis
     from redis.asyncio import Redis
     REDIS_INSTALLED = True
 except ImportError:
     REDIS_INSTALLED = False
     Redis = Any
+    aioredis = Any  # type: ignore
 
 
 class CacheManager:
@@ -48,7 +49,7 @@ class CacheManager:
             _logger.warning('未安装 redis 依赖，缓存功能已禁用。可使用 pip install lumary[redis] 安装')
             return
 
-        self.redis = redis.from_url(url, decode_responses=True)
+        self.redis = aioredis.from_url(url, decode_responses=True)
         self.enabled = True
         _logger.info('Redis 缓存连接成功')
 

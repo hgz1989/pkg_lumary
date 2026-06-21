@@ -19,6 +19,7 @@ try:
 except ImportError:
     MQTT_INSTALLED = False
     Client = Any
+    aiomqtt = Any  # type: ignore
 
 
 def topic_matches(pattern: str, topic: str) -> bool:

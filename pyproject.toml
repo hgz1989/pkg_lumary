@@ -28,7 +28,10 @@ classifiers = [
     "Typing :: Typed",
 ]
 dependencies = [
+    "coverage>=7.14.1",
     "fastapi>=0.136.0",
+    "pydantic-settings>=2.14.1",
+    "pytest>=9.1.0",
     "uvicorn[standard]>=0.48.0",
 ]
 
@@ -71,6 +74,8 @@ dev = [
     "pytest-twisted>=1.14.3",
     "twisted>=26.4.0",
     "aiosqlite>=0.22.1",
+    "redis>=8.0.0",
+    "aiomqtt>=2.5.1",
 ]
 
 [project.urls]
