@@ -20,8 +20,15 @@ try:
     REDIS_INSTALLED = True
 except ImportError:
     REDIS_INSTALLED = False
-    Redis = Any  # type: ignore
     aioredis = Any  # type: ignore
+
+    class Redis:  # type: ignore
+        """Redis 降级桩类，解决 Pylance 对 Any | None 的类型收窄警告"""
+        async def close(self) -> None: ...
+        async def get(self, name: str) -> Any: ...
+        async def set(self, name: str, value: Any, ex: Any = None) -> Any: ...
+        async def delete(self, *names: str) -> Any: ...
+        async def scan(self, cursor: int = 0, match: str | None = None, count: int | None = None) -> Any: ...
 
 _logger = getLogger(__name__)
 

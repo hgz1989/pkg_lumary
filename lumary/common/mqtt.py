@@ -16,8 +16,13 @@ try:
     MQTT_INSTALLED = True
 except ImportError:
     MQTT_INSTALLED = False
-    Client = Any  # type: ignore
     aiomqtt = Any  # type: ignore
+
+    class Client:  # type: ignore
+        """MQTT Client 降级桩类，解决 Pylance 对 Any | None 的类型收窄警告"""
+        async def publish(self, topic: str, payload: Any, **kwargs: Any) -> None: ...
+        async def subscribe(self, topic: str, **kwargs: Any) -> None: ...
+        messages: Any
 
 _logger = getLogger(__name__)
 
