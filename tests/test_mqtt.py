@@ -34,7 +34,7 @@ def test_topic_matches():
 
 @pytest.mark.asyncio
 async def test_mqtt_manager_fallback():
-    """测试未配置或未安装 aiomqtt 时的方法调用不会报错"""
+    """测试未初始化 aiomqtt 时的方法调用不会报错"""
     # 强制标记为未启用
     mqtt_client.enabled = False
 

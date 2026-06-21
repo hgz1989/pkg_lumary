@@ -40,11 +40,7 @@ class CacheManager:
         Args:
             url: Redis 连接 URL (如 redis://localhost:6379/0)
         """
-        try:
-            import redis.asyncio as aioredis
-        except ImportError:
-            _logger.warning('未安装 redis 依赖，缓存功能已禁用。可使用 pip install lumary[redis] 安装')
-            return
+        import redis.asyncio as aioredis
 
         self.redis = aioredis.from_url(url, decode_responses=True)
         self.enabled = True

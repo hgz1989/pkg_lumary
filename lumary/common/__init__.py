@@ -23,8 +23,11 @@ __all__ = [
     'set_log_level',
     'set_log_format',
     'setup_logger',
+    # 缓存
+    'CacheManager',
     'cache',
     'cache_response',
+    # MQTT
     'mqtt_client',
     'topic_matches'
 ]

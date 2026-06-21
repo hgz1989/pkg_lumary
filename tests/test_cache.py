@@ -11,7 +11,7 @@ from lumary.common.cache import cache, cache_response
 
 @pytest.mark.asyncio
 async def test_cache_manager_fallback():
-    """测试未配置或未安装 redis 时的方法调用不会报错"""
+    """测试未初始化 cache 时的方法调用不会报错"""
     # 强制标记为未启用
     cache.enabled = False
     

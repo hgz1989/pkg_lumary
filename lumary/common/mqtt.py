@@ -86,11 +86,7 @@ class MqttManager:
             port: MQTT Broker 端口
             **kwargs: 透传给 aiomqtt.Client 的其他参数 (如 username, password)
         """
-        try:
-            import aiomqtt  # noqa: F401
-        except ImportError:
-            _logger.warning('未安装 aiomqtt 依赖，MQTT 功能已禁用。可使用 pip install lumary[mqtt] 安装')
-            return
+        import aiomqtt  # noqa: F401
 
         self.enabled = True
         self._listen_task = asyncio.create_task(self._listen(hostname, port, kwargs))
