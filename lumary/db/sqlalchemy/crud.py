@@ -53,6 +53,19 @@ class CRUDBase(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
         """内部方法：触发缓存命名空间清理"""
         await cache.clear_namespace(self.cache_namespace)
 
+    def _extract_model_data(self, obj_in: BaseModel | dict[str, Any], exclude_unset: bool = False) -> dict[str, Any]:
+        """提取并过滤出属于模型有效列的数据
+
+        Args:
+            obj_in: 输入的 Pydantic 模型或字典
+            exclude_unset: Pydantic 的 exclude_unset 参数
+
+        Returns:
+            过滤后的字典
+        """
+        raw = obj_in if isinstance(obj_in, dict) else obj_in.model_dump(exclude_unset=exclude_unset)
+        return {k: v for k, v in raw.items() if k in self.valid_columns}
+
     async def create(self, *, obj_in: CreateSchemaType | dict) -> ModelType:
         """创建新记录
 
@@ -62,8 +75,7 @@ class CRUDBase(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
         Returns:
             创建成功的模型实例
         """
-        raw = obj_in if isinstance(obj_in, dict) else obj_in.model_dump()
-        obj_in_data = {k: v for k, v in raw.items() if k in self.valid_columns}
+        obj_in_data = self._extract_model_data(obj_in)
 
         db_obj = self.model(**obj_in_data)
         self.db.add(db_obj)
@@ -95,8 +107,7 @@ class CRUDBase(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
             db_objs = []
 
             for obj_in in objs_in:
-                raw = obj_in if isinstance(obj_in, dict) else obj_in.model_dump()
-                obj_data = {k: v for k, v in raw.items() if k in self.valid_columns}
+                obj_data = self._extract_model_data(obj_in)
 
                 db_obj = self.model(**obj_data)
                 db_objs.append(db_obj)
@@ -114,8 +125,7 @@ class CRUDBase(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
         successful_objs = []
 
         for obj_in in objs_in:
-            obj_data = obj_in if isinstance(obj_in, dict) else obj_in.model_dump()
-            obj_data = {k: v for k, v in obj_data.items() if k in self.valid_columns}
+            obj_data = self._extract_model_data(obj_in)
 
             db_obj = self.model(**obj_data)
             self.db.add(db_obj)
@@ -270,13 +280,9 @@ class CRUDBase(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
             raise BadRequestError('该数据已被删除，无法执行更新操作')
 
         has_real_change = False
-        raw = obj_in if isinstance(obj_in, dict) else obj_in.model_dump(exclude_unset=True)
+        update_data = self._extract_model_data(obj_in, exclude_unset=True)
 
-        for field, value in raw.items():
-            # 跳过不允许更新的字段
-            if field not in self.valid_columns:
-                continue
-
+        for field, value in update_data.items():
             old_val = getattr(db_obj_in, field)
 
             if old_val != value:
