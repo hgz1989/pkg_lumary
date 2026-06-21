@@ -23,22 +23,14 @@ _logger = getLogger(__name__)
 class _NoArgHook(Protocol):
     """无参数钉子协议定义"""
 
-    async def __call__(self) -> None:
-        """执行无参数生命周期钉子"""
-        ...
+    async def __call__(self) -> None: ...
 
 
 @runtime_checkable
 class _AppArgHook(Protocol):
     """带 FastAPI 实例参数钉子协议定义"""
 
-    async def __call__(self, app: FastAPI) -> None:
-        """执行接收 FastAPI 实例的生命周期钉子
-
-        Args:
-            app: 当前 FastAPI 应用实例
-        """
-        ...
+    async def __call__(self, app: FastAPI) -> None: ...
 
 
 HookFunc = _NoArgHook | _AppArgHook
@@ -106,8 +98,13 @@ class HookRegistry:
         self._startup_seen: set[_HookItem] = set()
         self._shutdown_seen: set[_HookItem] = set()
 
-    def register_startup(self, func: HookFunc, priority: int, abort_on_exception: bool,
-                         timeout: float | None = None) -> None:
+    def register_startup(
+            self,
+            func: HookFunc,
+            priority: int,
+            abort_on_exception: bool,
+            timeout: float | None = None
+    ) -> None:
         """将启动钉子注册到列表中
 
         按优先级从大到小降序排列，priority 值越大的函数越先执行
@@ -126,8 +123,13 @@ class HookRegistry:
             self._startup_hooks.append(item)
             self._startup_hooks.sort(key=lambda x: -x.priority)
 
-    def register_shutdown(self, func: HookFunc, priority: int, abort_on_exception: bool,
-                          timeout: float | None = None) -> None:
+    def register_shutdown(
+            self,
+            func: HookFunc,
+            priority: int,
+            abort_on_exception: bool,
+            timeout: float | None = None
+    ) -> None:
         """将关闭钉子注册到列表中
 
         按优先级从小到大升序排列，以便进行反向清理
@@ -220,11 +222,10 @@ class HookRegistry:
             启动钉子描述列表，格式为「func_name(priority=N, abort=T, timeout=Xs)」
         """
         return [
-            f"{item.func.__name__}("
-            f"priority={item.priority}, "
-            f"abort={item.abort_on_exception}, "
-            f"timeout={f'{item.timeout}s' if item.timeout is not None else 'None'}"
-            f")"
+            f'{item.func.__name__}('
+            f'priority={item.priority}, '
+            f'abort={item.abort_on_exception}, '
+            f'timeout={f"{item.timeout}s" if item.timeout is not None else "None"})'
             for item in self._startup_hooks
         ]
 
@@ -237,11 +238,10 @@ class HookRegistry:
             关闭钉子描述列表，格式为「func_name(priority=N, abort=T, timeout=Xs)」
         """
         return [
-            f"{item.func.__name__}("
-            f"priority={item.priority}, "
-            f"abort={item.abort_on_exception}, "
-            f"timeout={f'{item.timeout}s' if item.timeout is not None else 'None'}"
-            f")"
+            f'{item.func.__name__}('
+            f'priority={item.priority}, '
+            f'abort={item.abort_on_exception}, '
+            f'timeout={f"{item.timeout}s" if item.timeout is not None else "None"})'
             for item in self._shutdown_hooks
         ]
 
@@ -263,7 +263,7 @@ class HookRegistry:
             *,
             priority: int = 50,
             abort_on_exception: bool = True,
-            timeout: float | None = None
+            timeout: int | float | None = None
     ) -> Callable[[HookFunc], HookFunc]:
         """注册服务启动(Startup)生命周期钉子的装饰器（实例级）
 
@@ -277,8 +277,14 @@ class HookRegistry:
         """
         ...
 
-    def on_startup(self, func: HookFunc | None = None, *, priority: int = 50, abort_on_exception: bool = True,
-                   timeout: float | None = None):
+    def on_startup(
+            self,
+            func: HookFunc | None = None,
+            *,
+            priority: int = 50,
+            abort_on_exception: bool = True,
+            timeout: int | float | None = None
+    ) -> Callable[[HookFunc], HookFunc] | HookFunc:
         """注册服务启动(Startup)生命周期钉子的装饰器（实例级）
 
         Args:
@@ -316,8 +322,12 @@ class HookRegistry:
 
     @overload
     def on_shutdown(
-            self, *, priority: int = 50, abort_on_exception: bool = False, timeout: float | None = None
-    ) -> Callable[[HookFunc], HookFunc]:
+            self,
+            *,
+            priority: int = 50,
+            abort_on_exception: bool = False,
+            timeout: float | None = None
+    ) -> Callable[[HookFunc], HookFunc] | HookFunc:
         """注册服务关闭(Shutdown)生命周期钉子的装饰器（实例级）
 
         Args:
@@ -330,8 +340,14 @@ class HookRegistry:
         """
         ...
 
-    def on_shutdown(self, func: HookFunc | None = None, *, priority: int = 50, abort_on_exception: bool = False,
-                    timeout: float | None = None):
+    def on_shutdown(
+            self,
+            func: HookFunc | None = None,
+            *,
+            priority: int = 50,
+            abort_on_exception: bool = False,
+            timeout: float | None = None
+    ) -> Callable[[HookFunc], HookFunc] | HookFunc:
         """注册服务关闭(Shutdown)生命周期钉子的装饰器（实例级）
 
         Args:
@@ -396,8 +412,12 @@ def on_startup(func: HookFunc) -> HookFunc:
 
 
 @overload
-def on_startup(*, priority: int = 50, abort_on_exception: bool = True, timeout: float | None = None) -> Callable[
-    [HookFunc], HookFunc]:
+def on_startup(
+        *,
+        priority: int = 50,
+        abort_on_exception: bool = True,
+        timeout: float | None = None
+) -> Callable[[HookFunc], HookFunc] | HookFunc:
     """注册服务启动(Startup)生命周期钉子的装饰器
 
     允许您将应用启动时的初始化逻辑（如数据库连接、数据预热等）分散到具体的业务模块中
@@ -414,8 +434,12 @@ def on_startup(*, priority: int = 50, abort_on_exception: bool = True, timeout: 
     ...
 
 
-def on_startup(func: HookFunc | None = None, *, priority: int = 50, abort_on_exception: bool = True,
-               timeout: float | None = None):
+def on_startup(
+        func: HookFunc | None = None,
+        *, priority: int = 50,
+        abort_on_exception: bool = True,
+        timeout: float | None = None
+) -> Callable[[HookFunc], HookFunc] | HookFunc:
     """注册服务启动(Startup)生命周期钉子的装饰器
 
     允许您将应用启动时的初始化逻辑（如数据库连接、数据预热等）分散到具体的业务模块中
@@ -466,8 +490,12 @@ def on_shutdown(func: HookFunc) -> HookFunc:
 
 
 @overload
-def on_shutdown(*, priority: int = 50, abort_on_exception: bool = False, timeout: float | None = None) -> Callable[
-    [HookFunc], HookFunc]:
+def on_shutdown(
+        *,
+        priority: int = 50,
+        abort_on_exception: bool = False,
+        timeout: int | float | None = None
+) -> Callable[[HookFunc], HookFunc] | HookFunc:
     """注册服务关闭(Shutdown)生命周期钉子的装饰器
 
     Args:
@@ -481,8 +509,13 @@ def on_shutdown(*, priority: int = 50, abort_on_exception: bool = False, timeout
     ...
 
 
-def on_shutdown(func: HookFunc | None = None, *, priority: int = 50, abort_on_exception: bool = False,
-                timeout: float | None = None):
+def on_shutdown(
+        func: HookFunc | None = None,
+        *,
+        priority: int = 50,
+        abort_on_exception: bool = False,
+        timeout: int | float | None = None
+) -> Callable[[HookFunc], HookFunc] | HookFunc:
     """注册服务关闭(Shutdown)生命周期钉子的装饰器
 
     允许您将应用关闭时的清理逻辑（如释放连接池、刷新日志等）分散到具体的业务模块中
