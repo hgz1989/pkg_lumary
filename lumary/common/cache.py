@@ -6,17 +6,14 @@
 import hashlib
 from functools import wraps
 from logging import getLogger
-from typing import Any, Callable, TYPE_CHECKING
+from typing import Any, Callable
 
 from fastapi import Request
 from pydantic import BaseModel
+import redis.asyncio as aioredis
+from redis.asyncio import Redis
 
 from lumary.common.utils.strings import json_loads, json_dumps
-
-if TYPE_CHECKING:
-    from redis.asyncio import Redis
-else:
-    Redis = Any
 
 _logger = getLogger(__name__)
 
@@ -40,8 +37,6 @@ class CacheManager:
         Args:
             url: Redis 连接 URL (如 redis://localhost:6379/0)
         """
-        import redis.asyncio as aioredis
-
         self.redis = aioredis.from_url(url, decode_responses=True)
         self.enabled = True
         _logger.info('Redis 缓存连接成功')

@@ -5,14 +5,11 @@
 """
 import asyncio
 from logging import getLogger
-from typing import Any, Callable, TYPE_CHECKING
+from typing import Any, Callable
+import aiomqtt
+from aiomqtt import Client
 
 from lumary.common.utils.strings import json_dumps
-
-if TYPE_CHECKING:
-    from aiomqtt import Client
-else:
-    Client = Any
 
 _logger = getLogger(__name__)
 
@@ -86,8 +83,6 @@ class MqttManager:
             port: MQTT Broker 端口
             **kwargs: 透传给 aiomqtt.Client 的其他参数 (如 username, password)
         """
-        import aiomqtt  # noqa: F401
-
         self.enabled = True
         self._listen_task = asyncio.create_task(self._listen(hostname, port, kwargs))
         _logger.info('MQTT 后台监听任务已启动')
@@ -142,8 +137,6 @@ class MqttManager:
             port: 端口
             kwargs: 其他连接参数
         """
-        import aiomqtt
-
         while self.enabled:
             try:
                 async with aiomqtt.Client(hostname, port=port, **kwargs) as client:

@@ -15,7 +15,6 @@ from sqlalchemy.sql import func, select
 from lumary.common.mixins.sqlalchemy import SoftDeleteMixin
 from lumary.exceptions import ConflictError, NotFoundError, BadRequestError
 from lumary.schemas import PageData
-from lumary.common.cache import cache
 from .model import ModelBase
 
 
@@ -53,7 +52,11 @@ class CRUDBase(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
 
     async def _invalidate_cache(self) -> None:
         """内部方法：触发缓存命名空间清理"""
-        await cache.clear_namespace(self.cache_namespace)
+        try:
+            from lumary.common.cache import cache
+            await cache.clear_namespace(self.cache_namespace)
+        except ImportError:
+            pass
 
     async def create(self, *, obj_in: CreateSchemaType) -> ModelType:
         """创建新记录
