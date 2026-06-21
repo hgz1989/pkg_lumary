@@ -70,6 +70,17 @@ class _HookItem:
 
         return self.func.__name__ == other.func.__name__ and id(self.func) == id(other.func)
 
+    def __hash__(self) -> int:
+        """重写哈希逻辑以支持 Set 数据结构的高效排重
+
+        由于重写了 __eq__，dataclass 默认会禁用 __hash__，
+        因此必须手动实现以提供 O(1) 的去重性能
+
+        Returns:
+            哈希值
+        """
+        return hash((self.func.__name__, id(self.func)))
+
 
 # 钉子注册表
 class HookRegistry:
@@ -86,12 +97,14 @@ class HookRegistry:
             await create_engine()
     """
 
-    __slots__ = ('_startup_hooks', '_shutdown_hooks')
+    __slots__ = ('_startup_hooks', '_shutdown_hooks', '_startup_seen', '_shutdown_seen')
 
     def __init__(self):
         """初始化"""
         self._startup_hooks: list[_HookItem] = []
         self._shutdown_hooks: list[_HookItem] = []
+        self._startup_seen: set[_HookItem] = set()
+        self._shutdown_seen: set[_HookItem] = set()
 
     def register_startup(self, func: HookFunc, priority: int, abort_on_exception: bool,
                          timeout: float | None = None) -> None:
@@ -108,7 +121,8 @@ class HookRegistry:
         """
         needs_app = isinstance(func, _AppArgHook)
         item = _HookItem(func, priority, abort_on_exception, needs_app, timeout)
-        if item not in self._startup_hooks:
+        if item not in self._startup_seen:
+            self._startup_seen.add(item)
             self._startup_hooks.append(item)
             self._startup_hooks.sort(key=lambda x: -x.priority)
 
@@ -127,7 +141,8 @@ class HookRegistry:
         """
         needs_app = isinstance(func, _AppArgHook)
         item = _HookItem(func, priority, abort_on_exception, needs_app, timeout)
-        if item not in self._shutdown_hooks:
+        if item not in self._shutdown_seen:
+            self._shutdown_seen.add(item)
             self._shutdown_hooks.append(item)
             self._shutdown_hooks.sort(key=lambda x: x.priority)
 
@@ -193,6 +208,8 @@ class HookRegistry:
         """清空所有已注册的钉子（用于测试隔离）"""
         self._startup_hooks.clear()
         self._shutdown_hooks.clear()
+        self._startup_seen.clear()
+        self._shutdown_seen.clear()
 
     def list_startup_hooks(self) -> list[str]:
         """列举已注册的启动钉子信息

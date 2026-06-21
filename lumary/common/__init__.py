@@ -10,6 +10,7 @@ from .context import (
     get_request_id
 )
 from .logger import set_log_level, set_log_format, setup_logger
+from .cache import cache, cache_response
 
 __all__ = [
     # 上下文变量
@@ -20,5 +21,7 @@ __all__ = [
     # 日志控制
     'set_log_level',
     'set_log_format',
-    'setup_logger'
+    'setup_logger',
+    'cache',
+    'cache_response'
 ]

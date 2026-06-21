@@ -23,9 +23,10 @@
 - 当 `import` 后的对象列表超过 50 个字符时，使用 `()` 包裹，括号内每个导入对象单独一行，且**最后一个对象末尾严禁添加逗号**
 
 ## 5. Web接口规范
-- 接口仅使用GET、POST请求方法
+- 接口仅使用GET、POST、DELETE请求方法
 - GET接口在前，分页查询接口放在所有GET接口末尾
-- POST接口统一在后
+- POST接口统一在后，DELETE接口在最后
+- 仅物理删除时使用DELETE接口，逻辑删除时使用POST接口
 
 ## 6. SQLAlchemy ORM规范
 - mapped_column严格按照原生参数顺序编写，参数单独换行
@@ -61,9 +62,16 @@
 - 数据库commit事务统一由Service层处理，CRUD层不提交事务
 
 ## 13. API注入规范
-- 通过deps.py工厂方法获取Service实例
 - 接口使用Annotated + Depends完成依赖注入
 
 ## 14. API参数规范
 - 路径参数使用 Path(alias='xxx')
 - 查询参数使用 Query
+
+## 15. API缓存规范
+- 所有接口缓存必须使用CacheManager
+- 缓存键值对格式：{接口路径}_{请求参数}
+- 缓存过期时间默认10秒
+- 缓存值为JSON字符串，使用json.dumps编码
+
+## 16. 所有__init__导出仅限于在自己的包内导出，不主动导出其他包的模块

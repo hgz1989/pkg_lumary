@@ -4,6 +4,7 @@
 @Description: SQLAlchemy CRUD 泛型基类
 """
 from typing import TypeVar, Generic, Any, Sequence, TypeGuard
+from functools import lru_cache
 
 from pydantic import BaseModel
 from sqlalchemy import inspect as sa_inspect, Select, text
@@ -14,6 +15,7 @@ from sqlalchemy.sql import func, select
 from lumary.common.mixins.sqlalchemy import SoftDeleteMixin
 from lumary.exceptions import ConflictError, NotFoundError, BadRequestError
 from lumary.schemas import PageData
+from lumary.common.cache import cache
 from .model import ModelBase
 
 
@@ -45,6 +47,13 @@ class CRUDBase(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
         mapper = sa_inspect(self.model)
 
         self.valid_columns = {col.key for col in mapper.mapper.column_attrs}
+        
+        # 缓存命名空间（表名）
+        self.cache_namespace = f'cache:{self.model.__tablename__}'
+
+    async def _invalidate_cache(self) -> None:
+        """内部方法：触发缓存命名空间清理"""
+        await cache.clear_namespace(self.cache_namespace)
 
     async def create(self, *, obj_in: CreateSchemaType) -> ModelType:
         """创建新记录
@@ -60,6 +69,7 @@ class CRUDBase(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
         db_obj = self.model(**obj_in_data)
         self.db.add(db_obj)
         await self.db.flush()
+        await self._invalidate_cache()
         return db_obj
 
     async def batch_create(
@@ -97,6 +107,7 @@ class CRUDBase(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
             if return_objs:
                 await self.db.flush()
 
+            await self._invalidate_cache()
             return db_objs
 
         # 场景 2：忽略错误记录（如某条数据冲突不影响其他数据入库）
@@ -120,6 +131,9 @@ class CRUDBase(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
                 # 必须从 session 中移除该对象，否则后续 flush 可能再次触发同一错误
                 self.db.expunge(db_obj)
 
+        if successful_objs:
+            await self._invalidate_cache()
+            
         return successful_objs
 
     async def _update_soft_del_flag(self, obj_id: Any, is_deleted: bool) -> ModelType:
@@ -156,6 +170,7 @@ class CRUDBase(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
 
         await self.db.flush()
         await self.db.refresh(db_obj)
+        await self._invalidate_cache()
         return db_obj
 
     async def soft_delete(self, *, obj_id: Any) -> ModelType:
@@ -200,6 +215,7 @@ class CRUDBase(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
 
         await self.db.delete(db_obj)
         await self.db.flush()
+        await self._invalidate_cache()
         return db_obj
 
     async def update(self, *, db_obj: ModelType, obj_in: UpdateSchemaType | dict[str, Any]) -> ModelType:
@@ -220,6 +236,7 @@ class CRUDBase(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
 
         await self.db.flush()
         await self.db.refresh(db_obj)
+        await self._invalidate_cache()
         return db_obj
 
     async def get(
@@ -265,6 +282,17 @@ class CRUDBase(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
             stmt = stmt.where(self.model.is_deleted.is_(False))
 
         return stmt
+    @lru_cache(maxsize=128)
+    def _validate_kwargs_keys(self, keys: tuple[str, ...]) -> set[str]:
+        """缓存验证 kwargs 键是否合法
+
+        Args:
+            keys: 参数键的元组（使用元组以便可被哈希缓存）
+
+        Returns:
+            无效的字段集合
+        """
+        return set(keys) - self.valid_columns
 
     def _apply_kwargs_filter(self, stmt: Select, kwargs: dict[str, Any]) -> Select:
         """为查询语句添加 kwargs 精确匹配过滤条件
@@ -279,7 +307,7 @@ class CRUDBase(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
             添加了过滤条件的查询语句
         """
         if kwargs:
-            invalid_keys = set(kwargs.keys()) - self.valid_columns
+            invalid_keys = self._validate_kwargs_keys(tuple(kwargs.keys()))
 
             if invalid_keys:
                 raise BadRequestError(f'无效的查询字段: {",".join(invalid_keys)}')

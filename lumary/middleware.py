@@ -40,17 +40,11 @@ class RequestIdMiddleware:
             await self.app(scope, receive, send)
             return
 
-        # 从请求头提取或自动生成 request_id
-        headers_list = scope.get('headers', [])
-        request_id = None
-
-        for key, value in headers_list:
-            if key == b'x-request-id':
-                request_id = value.decode('utf-8')
-                break
-
-        if not request_id:
-            request_id = generate_request_id()
+        # 使用 C 层级的 dict 转换实现 O(1) 提取，取代 Python 层级的 for 循环遍历
+        headers = dict(scope.get('headers', []))
+        request_id_bytes = headers.get(b'x-request-id')
+        
+        request_id = request_id_bytes.decode('utf-8') if request_id_bytes else generate_request_id()
 
         # 写入上下文变量（不做 reset，让值持续到 uvicorn.access 输出）
         set_request_id(request_id)

@@ -68,11 +68,13 @@ def _wrap_endpoint(endpoint: Callable) -> Callable:
         if isinstance(raw_response, (Response, APIResponseBase)):
             return raw_response
 
-        if isinstance(raw_response, tuple) and len(raw_response) == 2:
-            data, extra = raw_response
-            return response_with_extra_success(data=data, extra=extra)
+        # 使用 exact type matching 替代 isinstance，绕过 MRO 查找，提升高并发下的纳秒级性能
+        raw_type = type(raw_response)
 
-        if isinstance(raw_response, dict) and 'code' in raw_response and 'message' in raw_response:
+        if raw_type is tuple and len(raw_response) == 2:
+            return response_with_extra_success(data=raw_response[0], extra=raw_response[1])
+
+        if raw_type is dict and 'code' in raw_response and 'message' in raw_response:
             from .common import get_request_id
             if 'request_id' not in raw_response:
                 raw_response['request_id'] = get_request_id()
