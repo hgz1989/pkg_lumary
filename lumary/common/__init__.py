@@ -11,6 +11,7 @@ from .context import (
 )
 from .logger import set_log_level, set_log_format, setup_logger
 from .cache import cache, cache_response
+from .mqtt import mqtt_client, topic_matches
 
 __all__ = [
     # 上下文变量
@@ -23,5 +24,7 @@ __all__ = [
     'set_log_format',
     'setup_logger',
     'cache',
-    'cache_response'
+    'cache_response',
+    'mqtt_client',
+    'topic_matches'
 ]

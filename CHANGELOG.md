@@ -5,6 +5,10 @@
 ## [0.2.1] - 2026-06-21
 
 ### 🚀 新特性 (Features)
+- **异步 MQTT 路由系统**: 新增 `mqtt_client` 管理器，通过 `pip install lumary[mqtt]` (依赖 `aiomqtt`) 获取。
+  - **装饰器路由设计**: 使用 `@mqtt_client.on_message("sensor/+/temp")` 实现主题与处理函数的绑定。
+  - **一对多并发处理**: 同一个主题模式可以绑定多个处理函数，接收到消息时各函数会自动以 `asyncio.create_task` 相互独立并发执行，避免单点阻塞。
+  - **优雅降级**: 未安装 `aiomqtt` 时静默回退为无操作模式。
 - **Redis 高级缓存系统**: 新增 `CacheManager` 与 `@cache_response` 装饰器，支持无侵入式缓存。
   - 支持“平滑降级”：若未安装 `redis` 依赖，缓存功能会自动失效但不会阻断业务执行。
   - `CRUDBase` 深度集成：在进行创建、更新、删除等写操作时，自动通过 `SCAN` 清理对应表命名空间下的缓存。

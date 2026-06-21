@@ -43,11 +43,16 @@ standard = [
     "python-ulid>=3.1.0",
     "pydantic-settings>=2.14.0",
     "python-multipart>=0.0.32",
-    "redis>=5.0.0"
+    "redis>=5.0.0",
+    "aiomqtt>=2.0.0"
 ]
 
 redis = [
     "redis>=5.0.0"
+]
+
+mqtt = [
+    "aiomqtt>=2.0.0"
 ]
 
 [dependency-groups]

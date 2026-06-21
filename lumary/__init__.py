@@ -81,6 +81,8 @@ from .schemas import (
     response_with_extra_success,
     response_with_extra_fail
 )
+from .common.cache import cache, cache_response
+from .common.mqtt import mqtt_client
 
 
 __all__ = [
@@ -156,5 +158,10 @@ __all__ = [
     'response_success',
     'response_fail',
     'response_with_extra_success',
-    'response_with_extra_fail'
+    'response_with_extra_fail',
+    # Cache
+    'cache',
+    'cache_response',
+    # MQTT
+    'mqtt_client'
 ]
