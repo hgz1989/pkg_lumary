@@ -81,7 +81,7 @@ class MqttManager:
         """
 
         def decorator(func: Callable) -> Callable:
-
+            """内层装饰器，接收原始处理函数"""
             if topic not in self.handlers:
                 self.handlers[topic] = []
 
@@ -103,7 +103,7 @@ class MqttManager:
         """
         if not MQTT_INSTALLED:
             raise RuntimeError('未安装 aiomqtt 依赖，无法启动 MQTT！请使用 pip install lumary[mqtt] 安装')
-        
+
         self.enabled = True
         self._listen_task = asyncio.create_task(self._listen(hostname, port, kwargs))
         _logger.info('MQTT 后台监听任务已启动')
@@ -111,7 +111,7 @@ class MqttManager:
     async def close(self) -> None:
         """关闭 MQTT 连接与监听任务"""
         self.enabled = False
-        
+
         if self._listen_task and not self._listen_task.done():
             self._listen_task.cancel()
 
@@ -126,8 +126,8 @@ class MqttManager:
             **kwargs: 透传给 publish 的其他参数 (如 qos, retain)
         """
         mqtt_c = self.client
-        
-        if not self.enabled or not mqtt_c:
+
+        if not self.enabled or mqtt_c is None:
             return
 
         if isinstance(payload, dict):

@@ -50,7 +50,7 @@ class CacheManager:
         """
         if not REDIS_INSTALLED:
             raise RuntimeError('未安装 redis 依赖，无法启动缓存！请使用 pip install lumary[redis] 安装')
-        
+
         self.redis = aioredis.from_url(url, decode_responses=True)
         self.enabled = True
         _logger.info('Redis 缓存连接成功')
@@ -58,7 +58,7 @@ class CacheManager:
     async def close(self) -> None:
         """关闭 Redis 连接"""
         redis_client = self.redis
-        if redis_client:
+        if redis_client is not None:
             await redis_client.close()
             self.enabled = False
             _logger.info('Redis 缓存已断开')
@@ -74,7 +74,7 @@ class CacheManager:
         """
         redis_client = self.redis
 
-        if not self.enabled or not redis_client:
+        if not self.enabled or redis_client is None:
             return None
 
         try:
@@ -94,7 +94,7 @@ class CacheManager:
         """
         redis_client = self.redis
 
-        if not self.enabled or not redis_client:
+        if not self.enabled or redis_client is None:
             return
 
         try:
@@ -110,7 +110,7 @@ class CacheManager:
         """
         redis_client = self.redis
 
-        if not self.enabled or not redis_client:
+        if not self.enabled or redis_client is None:
             return
 
         try:
@@ -128,7 +128,7 @@ class CacheManager:
         """
         redis_client = self.redis
 
-        if not self.enabled or not redis_client:
+        if not self.enabled or redis_client is None:
             return
 
         try:
@@ -136,10 +136,10 @@ class CacheManager:
             match_pattern = f'{namespace}:*'
             while True:
                 cursor, keys = await redis_client.scan(cursor=cursor, match=match_pattern, count=100)
-                
+
                 if keys:
                     await redis_client.delete(*keys)
-                
+
                 if cursor == 0:
                     break
 
@@ -166,8 +166,27 @@ def cache_response(namespace: str, expire: int = 3600) -> Callable:
     """
 
     def decorator(func: Callable) -> Callable:
+        """内层装饰器，接收原始接口处理函数"""
+
         @wraps(func)
         async def wrapper(*args: Any, **kwargs: Any) -> Any:
+            """异步接口缓存执行包装器
+
+            执行流程：
+            1. 判断全局缓存开关，未启用直接放行原函数
+            2. 自动从 args/kwargs 提取 Request 对象
+            3. 根据请求方法+路径+查询参数生成哈希缓存key；无Request则使用函数名兜底
+            4. 读取缓存，命中直接返回缓存数据
+            5. 未命中执行原始接口，将返回值序列化为可缓存格式写入缓存
+            6. 返回原始接口完整响应对象
+
+            Args:
+                *args: 接口位置参数，自动遍历匹配 Request 实例
+                **kwargs: 接口关键字参数，优先读取 request 入参
+
+            Returns:
+                Any: 原接口返回的完整响应对象（Pydantic模型/字典/列表等）
+            """
             if not cache.enabled:
                 return await func(*args, **kwargs)
 
@@ -176,7 +195,7 @@ def cache_response(namespace: str, expire: int = 3600) -> Callable:
 
             if not request:
                 for arg in args:
-                    
+
                     if hasattr(arg, 'url') and hasattr(arg, 'method'):
                         request = arg
                         break
@@ -190,7 +209,7 @@ def cache_response(namespace: str, expire: int = 3600) -> Callable:
 
             # 尝试命中缓存
             cached_data = await cache.get(cache_key)
-            
+
             if cached_data is not None:
                 return cached_data
 
@@ -199,7 +218,7 @@ def cache_response(namespace: str, expire: int = 3600) -> Callable:
 
             # 解析数据用于缓存（支持 Pydantic BaseModel）
             to_cache = response
-            
+
             if hasattr(response, 'model_dump'):
                 to_cache = response.model_dump(mode='json')
             elif isinstance(response, BaseModel):
