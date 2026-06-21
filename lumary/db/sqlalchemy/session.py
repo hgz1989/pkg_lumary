@@ -58,7 +58,7 @@ class SessionFactory:
         """类装饰器：为服务类自动注入数据库会话
 
         通过重写类的 __signature__，使其能在 FastAPI 路由中直接通过 `service: XXXService = Depends()` 使用。
-        服务类的 `__init__` 中需包含名为 `db` 或类型为 `AsyncSession` 的参数。
+        服务类的 `__init__` 中需包含名为 `db` 或类型为 `AsyncSession` 的参数
 
         Returns:
             类装饰器

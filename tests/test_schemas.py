@@ -166,7 +166,7 @@ class TestResponseFunctions:
         resp = response_success()
         assert isinstance(resp, APIResponse)
         assert resp.code == 0
-        assert resp.message == '成功'
+        assert resp.message == '操作成功'
         assert resp.data is None
         assert resp.request_id == 'test-rid-001'
 
@@ -183,8 +183,9 @@ class TestResponseFunctions:
         assert resp.data is None
 
     def test_response_fail_default_message(self):
-        resp = response_fail(code=500)
-        assert resp.message == '失败'
+        # response_fail 必须传入 message
+        with pytest.raises(TypeError):
+            response_fail(code=500)
 
     def test_response_with_extra_success(self):
         item = _Item(name='x', value=1)

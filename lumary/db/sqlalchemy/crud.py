@@ -3,21 +3,19 @@
 @CreateDate : 2026/5/14
 @Description: SQLAlchemy CRUD 泛型基类
 """
-from typing import TypeVar, Generic, Any, Sequence
+from typing import TypeVar, Generic, Any, Sequence, TypeGuard
 
 from pydantic import BaseModel
 from sqlalchemy import inspect as sa_inspect, Select, text
-from sqlalchemy.exc import (
-    IntegrityError,
-    NoResultFound,
-    InvalidRequestError
-)
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql import func, select
 
+from lumary.common.mixins.sqlalchemy import SoftDeleteMixin
+from lumary.exceptions import ConflictError, NotFoundError, BadRequestError
+from lumary.schemas import PageData
 from .model import ModelBase
-from ...common.mixins.sqlalchemy import SoftDeleteMixin
-from ...schemas import PageData
+
 
 ModelType = TypeVar('ModelType', bound=ModelBase)
 CreateSchemaType = TypeVar('CreateSchemaType', bound=BaseModel)
@@ -41,7 +39,7 @@ class CRUDBase(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
         self.db = db
 
         if not hasattr(self, 'model') or self.model is None:
-            raise ValueError(f'{self.__class__.__name__} 必须显式定义 model 属性')
+            raise RuntimeError(f'{self.__class__.__name__} 必须显式定义 model 属性')
 
         # 使用 inspect 获取映射列，兼容性更好，同时缓存避免重复计算
         mapper = sa_inspect(self.model)
@@ -143,15 +141,15 @@ class CRUDBase(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
             db_obj.is_deleted = True
             db_obj.deleted_at = func.now()
         else:
-            db_obj = await self.get_with_deleted(obj_id)
+            db_obj = await self.get(obj_id, include_deleted=True)
 
             # 必须判空，因为可能返回 None
             if db_obj is None:
-                raise NoResultFound(f'{self.model.__name__}记录不存在: id={obj_id}')
+                raise NotFoundError(f'{self.model.__name__}记录不存在: id={obj_id}')
 
             # 有对象才能操作属性
             if not db_obj.is_deleted:
-                raise InvalidRequestError('数据未被删除，无需恢复')
+                raise ConflictError('当前数据未删除，不支持执行恢复操作')
 
             db_obj.is_deleted = False
             db_obj.deleted_at = None
@@ -194,7 +192,7 @@ class CRUDBase(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
         """
         # 第一步：参数合法性校验
         if db_obj is None and obj_id is None:
-            raise ValueError('必须传入db_obj或obj_id中的至少一个')
+            raise BadRequestError('必须传入db_obj或obj_id中的至少一个')
 
         # 如果已经传入 obj，直接使用，不再查库
         if db_obj is None:
@@ -224,38 +222,33 @@ class CRUDBase(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
         await self.db.refresh(db_obj)
         return db_obj
 
-    async def get(self, obj_id: Any, options: list | None = None, **kwargs: Any) -> ModelType:
+    async def get(
+            self,
+            obj_id: Any,
+            *,
+            options: list | None = None,
+            include_deleted: bool = False,
+            **kwargs: Any
+    ) -> ModelType:
         """根据主键获取单条记录
 
         Args:
             obj_id: 记录主键
             options: SQLAlchemy 加载策略列表
+            include_deleted: 是否包含软删除的数据
+            **kwargs: 精确匹配的过滤条件键值对
 
         Returns:
             查询到的模型实例或为空
         """
         db_obj = await self.db.get(self.model, obj_id, options=options, **kwargs)
 
-        if db_obj is None:
-            raise NoResultFound(f'{self.model.__name__}记录不存在: id={obj_id}')
-
-        if issubclass(self.model, SoftDeleteMixin) and db_obj.is_deleted:
-            raise NoResultFound(f'{self.model.__name__}记录已被删除: id={obj_id}')
+        if (db_obj is None) or (
+                self.is_soft_delete_model(db_obj) and not include_deleted and db_obj.is_deleted
+        ):
+            raise NotFoundError(f'{self.model.__name__}记录不存在或已删除: id={obj_id}')
 
         return db_obj
-
-    async def get_with_deleted(self, obj_id: Any) -> ModelType | None:
-        """查询主键记录，包含已软删除的数据
-
-        使用 SQLAlchemy 原生主键查找，自动适配任意主键名称和复合主键。
-
-        Args:
-            obj_id: 数据主键ID
-
-        Returns:
-            匹配主键的实体对象；无匹配数据时返回 None
-        """
-        return await self.db.get(self.model, obj_id)
 
     def _apply_soft_delete_filter(self, stmt: Select) -> Select:
         """为查询语句添加软删除过滤条件
@@ -289,24 +282,34 @@ class CRUDBase(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
             invalid_keys = set(kwargs.keys()) - self.valid_columns
 
             if invalid_keys:
-                raise ValueError(f'无效的查询字段: {",".join(invalid_keys)}')
+                raise BadRequestError(f'无效的查询字段: {",".join(invalid_keys)}')
 
             stmt = stmt.filter_by(**kwargs)
 
         return stmt
 
-    async def get_one(self, *, options: list | None = None, **kwargs: Any) -> ModelType | None:
+    async def get_one(
+            self,
+            *,
+            options: list | None = None,
+            include_deleted: bool = False,
+            **kwargs: Any
+    ) -> ModelType | None:
         """根据多个字段条件获取单条记录（AND 关系）
 
         Args:
             options: SQLAlchemy 加载策略列表，用于外键关联查询
+            include_deleted: 是否包含软删除的数据
             **kwargs: 字段名和值的键值对
 
         Returns:
             查询到的模型实例或为空
         """
         stmt = select(self.model)
-        stmt = self._apply_soft_delete_filter(stmt)
+
+        if not include_deleted:
+            stmt = self._apply_soft_delete_filter(stmt)
+
         stmt = self._apply_kwargs_filter(stmt, kwargs)
 
         if options:
@@ -315,27 +318,31 @@ class CRUDBase(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
         result = await self.db.execute(stmt)
         return result.scalar_one_or_none()
 
-    async def get_count(self, *criteria: Any, options: list | None = None, **kwargs: Any) -> int:
+    async def get_count(
+            self,
+            *criteria: Any,
+            include_deleted: bool = False,
+            **kwargs: Any
+    ) -> int:
         """统计记录总数
 
         Args:
             *criteria: SQLAlchemy 查询条件
-            options: SQLAlchemy 加载策略列表，用于外键关联查询
+            include_deleted: 是否包含软删除的数据
             **kwargs: 精确匹配的过滤条件
 
         Returns:
             记录总数
         """
         stmt = select(func.count()).select_from(self.model)
-        stmt = self._apply_soft_delete_filter(stmt)
+
+        if not include_deleted:
+            stmt = self._apply_soft_delete_filter(stmt)
 
         if criteria:
             stmt = stmt.where(*criteria)
 
         stmt = self._apply_kwargs_filter(stmt, kwargs)
-        if options:
-            stmt = stmt.options(*options)
-
         result = await self.db.execute(stmt)
         return result.scalar_one()
 
@@ -346,6 +353,7 @@ class CRUDBase(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
             limit: int = 100,
             order_by: Any | Sequence[Any] | None = None,
             options: list | None = None,
+            include_deleted: bool = False,
             **kwargs: Any,
     ) -> Sequence[ModelType]:
         """获取多条记录支持分页、条件过滤和排序
@@ -356,13 +364,16 @@ class CRUDBase(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
             limit: 返回的最大记录数量
             order_by: 排序字段或字段列表 (如 model.id.desc())
             options: SQLAlchemy 加载策略列表，用于外键关联查询
+            include_deleted: 是否包含软删除的数据
             **kwargs: 精确匹配的过滤条件 (如 status=1)
 
         Returns:
             模型实例序列
         """
         stmt = select(self.model)
-        stmt = self._apply_soft_delete_filter(stmt)
+
+        if not include_deleted:
+            stmt = self._apply_soft_delete_filter(stmt)
 
         if criteria:
             stmt = stmt.where(*criteria)
@@ -386,6 +397,7 @@ class CRUDBase(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
             size: int = 100,
             order_by: Any | Sequence[Any] | None = None,
             options: list | None = None,
+            include_deleted: bool = False,
             **kwargs: Any,
     ) -> PageData[ModelType]:
         """获取分页数据，自动查询总数并构建 PageData
@@ -398,19 +410,25 @@ class CRUDBase(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
             size: 每页数量
             order_by: 排序字段或字段列表 (如 model.id.desc())
             options: SQLAlchemy 加载策略列表，用于外键关联查询
+            include_deleted: 是否包含软删除的数据
             **kwargs: 精确匹配的过滤条件 (如 status=1)
 
         Returns:
             包含当前页数据与分页元信息的 PageData 对象
         """
         skip = (page - 1) * size
-        total = await self.get_count(*criteria, **kwargs)
+        total = await self.get_count(
+            *criteria,
+            include_deleted=include_deleted,
+            **kwargs
+        )
         items = await self.get_multi(
             *criteria,
             skip=skip,
             limit=size,
             order_by=order_by,
             options=options,
+            include_deleted=include_deleted,
             **kwargs,
         )
         return PageData.build(items=list(items), page=page, size=size, total=total)
@@ -446,3 +464,15 @@ class CRUDBase(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
             SQL 执行结果
         """
         return await self.db.execute(text(sql), params or {})
+
+    @staticmethod
+    def is_soft_delete_model(obj: ModelBase) -> TypeGuard[SoftDeleteMixin]:
+        """判断对象是否为软删除模型
+
+        Args:
+            obj: 要判断的对象
+
+        Returns:
+            是否为软删除模型
+        """
+        return isinstance(obj, SoftDeleteMixin)

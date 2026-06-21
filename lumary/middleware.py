@@ -13,7 +13,7 @@ class RequestIdMiddleware:
     """纯 ASGI request_id 中间件
 
     与 BaseHTTPMiddleware 不同，此中间件直接操作 ASGI 协议，
-    在同一上下文中运行，确保 uvicorn.access 等日志能获取到 request_id。
+    在同一上下文中运行，确保 uvicorn.access 等日志能获取到 request_id
 
     每次请求写入 ContextVar，不做 reset：
     - uvicorn.access 日志在中间件返回**之后**才发出，reset 会导致 request_id 丢失

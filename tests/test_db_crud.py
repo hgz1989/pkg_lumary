@@ -6,7 +6,7 @@
 import pytest
 from pydantic import BaseModel
 from sqlalchemy import String
-from sqlalchemy.exc import NoResultFound
+from lumary.exceptions import NotFoundError, BadRequestError
 from sqlalchemy.orm import Mapped, mapped_column
 
 from lumary.db.sqlalchemy.base import Base
@@ -108,7 +108,7 @@ class TestCRUDInit:
         class _BadCRUD(CRUDBase):
             pass  # 没有 model
 
-        with pytest.raises((ValueError, AttributeError)):
+        with pytest.raises(RuntimeError, match='必须显式定义 model 属性'):
             _BadCRUD(db=session)
 
 
@@ -193,7 +193,7 @@ class TestGet:
         assert fetched.name == 'Carol'
 
     async def test_get_nonexistent_raises(self, user_crud):
-        with pytest.raises(NoResultFound):
+        with pytest.raises(NotFoundError):
             await user_crud.get('nonexistent-id')
 
     async def test_get_with_options(self, user_crud):
@@ -206,8 +206,8 @@ class TestGet:
         assert found.name == 'GetOpt'
 
     async def test_get_with_deleted_returns_none_for_missing(self, post_crud):
-        result = await post_crud.get_with_deleted('nope')
-        assert result is None
+        with pytest.raises(NotFoundError):
+            await post_crud.get('nope', include_deleted=True)
 
 
 # ──────────────────────────────────────────────
@@ -225,7 +225,7 @@ class TestGetOne:
         assert result is None
 
     async def test_get_one_invalid_field_raises(self, user_crud):
-        with pytest.raises(ValueError, match='无效的查询字段'):
+        with pytest.raises(BadRequestError, match='无效的查询字段'):
             await user_crud.get_one(invalid_col='x')
 
 
@@ -276,7 +276,7 @@ class TestGetMulti:
         assert any(i.name == 'Ord_A' for i in items)
 
     async def test_get_multi_invalid_kwarg_raises(self, user_crud):
-        with pytest.raises(ValueError, match='无效的查询字段'):
+        with pytest.raises(BadRequestError, match='无效的查询字段'):
             await user_crud.get_multi(bad_field='x')
 
 
@@ -342,21 +342,21 @@ class TestRemove:
         obj = await user_crud.create(obj_in=_UserCreate(name='DelObj', age=1))
         deleted = await user_crud.remove(db_obj=obj)
         assert deleted.id == obj.id
-        with pytest.raises(NoResultFound):
+        with pytest.raises(NotFoundError):
             await user_crud.get(obj.id)
 
     async def test_remove_by_id(self, user_crud):
         obj = await user_crud.create(obj_in=_UserCreate(name='DelId', age=2))
         await user_crud.remove(obj_id=obj.id)
-        with pytest.raises(NoResultFound):
+        with pytest.raises(NotFoundError):
             await user_crud.get(obj.id)
 
     async def test_remove_no_args_raises(self, user_crud):
-        with pytest.raises(ValueError, match='必须传入'):
+        with pytest.raises(BadRequestError, match='必须传入'):
             await user_crud.remove()
 
     async def test_remove_nonexistent_id_raises(self, user_crud):
-        with pytest.raises(NoResultFound):
+        with pytest.raises(NotFoundError):
             await user_crud.remove(obj_id='ghost-id')
 
 
@@ -373,13 +373,13 @@ class TestSoftDelete:
     async def test_soft_deleted_hidden_from_get(self, post_crud):
         obj = await post_crud.create(obj_in=_PostCreate(title='Hidden'))
         await post_crud.soft_delete(obj_id=obj.id)
-        with pytest.raises(NoResultFound):
+        with pytest.raises(NotFoundError):
             await post_crud.get(obj.id)
 
     async def test_soft_deleted_visible_via_get_with_deleted(self, post_crud):
         obj = await post_crud.create(obj_in=_PostCreate(title='Visible'))
         await post_crud.soft_delete(obj_id=obj.id)
-        result = await post_crud.get_with_deleted(obj.id)
+        result = await post_crud.get(obj.id, include_deleted=True)
         assert result is not None
         assert result.is_deleted is True
 
@@ -412,16 +412,16 @@ class TestSoftDelete:
         """测试恢复软删除"""
         obj = await post_crud.create(obj_in=_PostCreate(title='ToRestore'))
         await post_crud.soft_delete(obj_id=obj.id)
-        
+
         # 已软删除，正常 get 查不到
-        with pytest.raises(NoResultFound):
+        with pytest.raises(NotFoundError):
             await post_crud.get(obj.id)
-            
+
         # 恢复
         restored_obj = await post_crud.restore(obj_id=obj.id)
         assert restored_obj.is_deleted is False
         assert restored_obj.deleted_at is None
-        
+
         # 恢复后可以 get 到
         found = await post_crud.get(obj.id)
         assert found.id == obj.id

@@ -3,7 +3,6 @@
 @CreateDate : 2026/5/14
 @Description: SQLAlchemy ORM 基础模型
 """
-
 from datetime import datetime
 
 from sqlalchemy import String, DateTime
@@ -19,7 +18,6 @@ class ModelBase(Base):
 
     提供通用的主键、创建时间和更新时间字段
     """
-
     __abstract__ = True
 
     id: Mapped[str] = mapped_column(
@@ -29,13 +27,11 @@ class ModelBase(Base):
         comment='主键ID',
         sort_order=-10000
     )
-
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         server_default=func.now(),
         comment='创建时间'
     )
-
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         server_default=func.now(),

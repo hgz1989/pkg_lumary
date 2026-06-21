@@ -11,11 +11,7 @@ from collections.abc import (
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from logging import getLogger
-from typing import (
-    runtime_checkable,
-    Protocol,
-    overload
-)
+from typing import runtime_checkable, Protocol, overload
 
 from fastapi import FastAPI
 

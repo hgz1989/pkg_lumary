@@ -102,7 +102,7 @@ def build_exception_handlers() -> ExceptionHandlers:
         """统一处理所有 HTTP 层异常
 
         框架自动抛出的 400/401/403/404/405 以及用户手动 raise HTTPException
-        均由此拦截。
+        均由此拦截
 
         Args:
             _request: 当前请求对象（未使用）
@@ -140,7 +140,7 @@ def build_exception_handlers() -> ExceptionHandlers:
     async def exception_handler(_request: Request, exc: Exception) -> JSONResponse:
         """兜底处理器：捕获所有未被上层匹配的未知异常
 
-        记录完整堆栈日志，生产环境对客户端隐藏内部细节。
+        记录完整堆栈日志，生产环境对客户端隐藏内部细节
 
         Args:
             _request: 当前请求对象（未使用）

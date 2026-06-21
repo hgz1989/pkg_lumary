@@ -58,7 +58,7 @@ def test_normal_data_wrap(client: TestClient):
     assert response.status_code == 200
     data = response.json()
     assert data["code"] == 0
-    assert data["message"] == "成功"
+    assert data["message"] == "操作成功"
     assert data["data"] == {"name": "张三", "age": 25}
     assert data["request_id"] == "test-router-id-123"
     assert "extra" not in data
@@ -69,7 +69,7 @@ def test_tuple_data_wrap(client: TestClient):
     assert response.status_code == 200
     data = response.json()
     assert data["code"] == 0
-    assert data["message"] == "成功"
+    assert data["message"] == "操作成功"
     assert data["data"] == {"name": "李四", "age": 30}
     assert data["extra"] == {"role": "admin"}
     assert data["request_id"] == "test-router-id-123"

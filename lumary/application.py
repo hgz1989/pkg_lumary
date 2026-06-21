@@ -4,11 +4,11 @@
 @Description: Lumary 应用核心类与生命周期管理
 """
 import sys
-import time
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, AsyncExitStack
 from importlib import import_module
 from logging import getLogger
 from pathlib import Path
+from time import time
 from typing import Any, Self, AsyncGenerator
 
 from fastapi import FastAPI, APIRouter, Request
@@ -86,7 +86,12 @@ class Lumary(FastAPI):
         """
         # 设置属性
         self.is_sub_app = is_sub_app
-        self._hook_registry = hook_registry if (hook_registry is not None) else default_registry
+        
+        # 主应用默认使用全局注册表，子应用默认使用独立的空注册表以防重复执行全局钉子
+        if hook_registry is not None:
+            self._hook_registry = hook_registry
+        else:
+            self._hook_registry = HookRegistry() if is_sub_app else default_registry
 
         # 如果是子应用
         if self.is_sub_app:
@@ -95,29 +100,28 @@ class Lumary(FastAPI):
                 kwargs.pop('root_path')
                 _logger.debug(f'子应用 [{title}] 的 root_path 已被自动清除')
 
-            # 清空子应用生命周期管理
-            if 'lifespan' in kwargs:
-                kwargs.pop('lifespan')
-                _logger.debug(f'子应用 [{title}] 的 lifespan 已被自动清除')
-
         # 默认中间件
-        middlewares = [
-            Middleware(
-                RequestIdMiddleware,  # type: ignore
-            )
-        ]
-
-        # 添加 CORS 中间件
-        if enable_cors:
+        middlewares = []
+        
+        # 子应用默认由主应用接管中间件，避免头冲突与重复执行
+        if not self.is_sub_app:
             middlewares.append(
                 Middleware(
-                    CORSMiddleware,  # type: ignore
-                    allow_origins=allow_origins or ['*'],
-                    allow_credentials=(allow_origins or ['*']) != ['*'],
-                    allow_methods=allow_methods or ['*'],
-                    allow_headers=allow_headers or ['*'],
+                    RequestIdMiddleware,  # type: ignore
                 )
             )
+
+            # 添加 CORS 中间件
+            if enable_cors:
+                middlewares.append(
+                    Middleware(
+                        CORSMiddleware,  # type: ignore
+                        allow_origins=allow_origins or ['*'],
+                        allow_credentials=(allow_origins or ['*']) != ['*'],
+                        allow_methods=allow_methods or ['*'],
+                        allow_headers=allow_headers or ['*'],
+                    )
+                )
 
         # 设置默认值
         kwargs.setdefault('terms_of_service', _DEFAULT_TERMS_OF_SERVICE)
@@ -151,7 +155,7 @@ class Lumary(FastAPI):
         )
 
         # 记录应用启动时间
-        self._start_time: float = time.time()
+        self._start_time: float = time()
 
         # 设置自定义文档
         configure_openapi_schema(self)
@@ -209,7 +213,7 @@ class Lumary(FastAPI):
             Returns:
                 响应数据
             """
-            uptime = round(time.time() - self._start_time, 3)
+            uptime = round(time() - self._start_time, 3)
             memory_mb = -1
             data = SystemMetricsOut(
                 uptime_seconds=uptime,
@@ -306,7 +310,7 @@ class Lumary(FastAPI):
 
     @asynccontextmanager
     async def _application_lifespan(self, app: FastAPI) -> AsyncGenerator[None, None]:
-        """应用生命周期管理
+        """应用生命周期管理（支持栈式统管所有子应用）
 
         Args:
             app: FastAPI 应用实例
@@ -314,5 +318,16 @@ class Lumary(FastAPI):
         Returns:
             异步生成器
         """
-        async with fastapi_lifespan(app, registry=self._hook_registry):
+        async with AsyncExitStack() as stack:
+            # 1. 优先执行当前应用的生命周期钩子
+            await stack.enter_async_context(fastapi_lifespan(app, registry=self._hook_registry))
+
+            # 2. 遍历所有挂载的路由，如果是子应用且有 lifespan_context，则自动入栈执行
+            for route in app.routes:
+                if isinstance(route, Mount):
+                    sub_app = route.app
+                    # 检查是否为合法的 FastAPI/Starlette 应用
+                    if hasattr(sub_app, 'router') and hasattr(sub_app.router, 'lifespan_context'):
+                        await stack.enter_async_context(sub_app.router.lifespan_context(sub_app))
+
             yield

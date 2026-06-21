@@ -7,7 +7,7 @@ from datetime import datetime
 from math import ceil
 from typing import TypeVar, Generic, Sequence, Any
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_serializer
 
 from .__version__ import __version__ as lumary_version
 from .common import get_request_id
