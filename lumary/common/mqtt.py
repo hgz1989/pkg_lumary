@@ -6,10 +6,18 @@
 import asyncio
 from logging import getLogger
 from typing import Any, Callable
-import aiomqtt
-from aiomqtt import Client
 
 from lumary.common.utils.strings import json_dumps
+
+try:
+    import aiomqtt
+    from aiomqtt import Client
+
+    MQTT_INSTALLED = True
+except ImportError:
+    MQTT_INSTALLED = False
+    Client = Any  # type: ignore
+    aiomqtt = Any  # type: ignore
 
 _logger = getLogger(__name__)
 
@@ -32,13 +40,16 @@ def topic_matches(pattern: str, topic: str) -> bool:
     t_levels = topic.split('/')
 
     for i, p in enumerate(p_levels):
+
         if p == '#':
             return True
+
         if i >= len(t_levels):
             return False
+
         if p != '+' and p != t_levels[i]:
             return False
-            
+
     return len(p_levels) == len(t_levels)
 
 
@@ -68,11 +79,15 @@ class MqttManager:
         Returns:
             装饰器函数
         """
+
         def decorator(func: Callable) -> Callable:
+
             if topic not in self.handlers:
                 self.handlers[topic] = []
+
             self.handlers[topic].append(func)
             return func
+
         return decorator
 
     async def init(self, hostname: str, port: int = 1883, **kwargs: Any) -> None:
@@ -82,7 +97,13 @@ class MqttManager:
             hostname: MQTT Broker 主机地址
             port: MQTT Broker 端口
             **kwargs: 透传给 aiomqtt.Client 的其他参数 (如 username, password)
+            
+        Raises:
+            RuntimeError: 如果未安装 aiomqtt 依赖时抛出
         """
+        if not MQTT_INSTALLED:
+            raise RuntimeError('未安装 aiomqtt 依赖，无法启动 MQTT！请使用 pip install lumary[mqtt] 安装')
+        
         self.enabled = True
         self._listen_task = asyncio.create_task(self._listen(hostname, port, kwargs))
         _logger.info('MQTT 后台监听任务已启动')
@@ -90,8 +111,10 @@ class MqttManager:
     async def close(self) -> None:
         """关闭 MQTT 连接与监听任务"""
         self.enabled = False
+        
         if self._listen_task and not self._listen_task.done():
             self._listen_task.cancel()
+
         _logger.info('MQTT 监听任务已安全关闭')
 
     async def publish(self, topic: str, payload: Any, **kwargs: Any) -> None:
@@ -103,6 +126,7 @@ class MqttManager:
             **kwargs: 透传给 publish 的其他参数 (如 qos, retain)
         """
         mqtt_c = self.client
+        
         if not self.enabled or not mqtt_c:
             return
 
@@ -151,7 +175,8 @@ class MqttManager:
                     # 循环接收并分发消息
                     async for message in client.messages:
                         incoming_topic = str(message.topic)
-                        payload = message.payload if isinstance(message.payload, bytes) else str(message.payload).encode('utf-8')
+                        payload = message.payload if isinstance(message.payload, bytes) else str(
+                            message.payload).encode('utf-8')
 
                         # 遍历路由表寻找所有匹配的处理函数
                         for pattern, funcs in self.handlers.items():

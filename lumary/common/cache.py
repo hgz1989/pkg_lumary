@@ -10,10 +10,18 @@ from typing import Any, Callable
 
 from fastapi import Request
 from pydantic import BaseModel
-import redis.asyncio as aioredis
-from redis.asyncio import Redis
 
 from lumary.common.utils.strings import json_loads, json_dumps
+
+try:
+    import redis.asyncio as aioredis
+    from redis.asyncio import Redis
+
+    REDIS_INSTALLED = True
+except ImportError:
+    REDIS_INSTALLED = False
+    Redis = Any  # type: ignore
+    aioredis = Any  # type: ignore
 
 _logger = getLogger(__name__)
 
@@ -36,15 +44,22 @@ class CacheManager:
 
         Args:
             url: Redis 连接 URL (如 redis://localhost:6379/0)
+            
+        Raises:
+            RuntimeError: 如果未安装 redis 依赖时抛出
         """
+        if not REDIS_INSTALLED:
+            raise RuntimeError('未安装 redis 依赖，无法启动缓存！请使用 pip install lumary[redis] 安装')
+        
         self.redis = aioredis.from_url(url, decode_responses=True)
         self.enabled = True
         _logger.info('Redis 缓存连接成功')
 
     async def close(self) -> None:
         """关闭 Redis 连接"""
-        if self.redis:
-            await self.redis.close()
+        redis_client = self.redis
+        if redis_client:
+            await redis_client.close()
             self.enabled = False
             _logger.info('Redis 缓存已断开')
 
@@ -58,8 +73,10 @@ class CacheManager:
             解析后的缓存数据，不存在或未开启时返回 None
         """
         redis_client = self.redis
+
         if not self.enabled or not redis_client:
             return None
+
         try:
             val = await redis_client.get(key)
             return json_loads(val) if val else None
@@ -76,8 +93,10 @@ class CacheManager:
             expire: 过期时间（秒）
         """
         redis_client = self.redis
+
         if not self.enabled or not redis_client:
             return
+
         try:
             await redis_client.set(key, json_dumps(value), ex=expire)
         except Exception as e:
@@ -90,8 +109,10 @@ class CacheManager:
             key: 缓存键
         """
         redis_client = self.redis
+
         if not self.enabled or not redis_client:
             return
+
         try:
             await redis_client.delete(key)
         except Exception as e:
@@ -106,17 +127,22 @@ class CacheManager:
             namespace: 命名空间前缀
         """
         redis_client = self.redis
+
         if not self.enabled or not redis_client:
             return
+
         try:
             cursor = 0
             match_pattern = f'{namespace}:*'
             while True:
                 cursor, keys = await redis_client.scan(cursor=cursor, match=match_pattern, count=100)
+                
                 if keys:
                     await redis_client.delete(*keys)
+                
                 if cursor == 0:
                     break
+
         except Exception as e:
             _logger.error(f'Redis scan/delete 错误: {e}')
 
@@ -147,8 +173,10 @@ def cache_response(namespace: str, expire: int = 3600) -> Callable:
 
             # 尝试从参数中提取 Request 对象以构建精确的缓存 Key
             request: Request | None = kwargs.get('request')
+
             if not request:
                 for arg in args:
+                    
                     if hasattr(arg, 'url') and hasattr(arg, 'method'):
                         request = arg
                         break
@@ -162,6 +190,7 @@ def cache_response(namespace: str, expire: int = 3600) -> Callable:
 
             # 尝试命中缓存
             cached_data = await cache.get(cache_key)
+            
             if cached_data is not None:
                 return cached_data
 
@@ -170,6 +199,7 @@ def cache_response(namespace: str, expire: int = 3600) -> Callable:
 
             # 解析数据用于缓存（支持 Pydantic BaseModel）
             to_cache = response
+            
             if hasattr(response, 'model_dump'):
                 to_cache = response.model_dump(mode='json')
             elif isinstance(response, BaseModel):

@@ -3,8 +3,6 @@
 @CreateDate : 2026/5/14
 @Description: Lumary 模块
 """
-from importlib.util import find_spec
-
 from fastapi import (
     FastAPI,
     APIRouter,
@@ -159,12 +157,3 @@ __all__ = [
     'response_with_extra_success',
     'response_with_extra_fail'
 ]
-
-if find_spec('redis') is not None:
-    from .common.cache import cache, cache_response  # noqa: F401
-    __all__.append('cache')
-    __all__.append('cache_response')
-
-if find_spec('aiomqtt') is not None:
-    from .common.mqtt import mqtt_client  # noqa: F401
-    __all__.append('mqtt_client')
