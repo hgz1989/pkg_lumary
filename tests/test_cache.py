@@ -13,7 +13,7 @@ from pydantic import BaseModel
 
 # 导入真实模块
 import lumary.common.cache as cache_module
-from lumary.common.cache import CacheManager, cache_response
+from lumary.common.cache import CacheManager, cache, cache_response
 
 
 @pytest.fixture

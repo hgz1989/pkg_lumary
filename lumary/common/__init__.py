@@ -36,9 +36,8 @@ if find_spec('redis') is not None:
     __all__.append('cache')
     __all__.append('cache_response')
 
-if find_spec('aiomqtt') is not None:
-    from .mqtt import mqtt_client, topic_matches
+if find_spec('paho') is not None:
+    from .mqtt import MQTTManager, topic_matches
 
     __all__.append('topic_matches')
-    __all__.append('mqtt_client')
-    __all__.append('MQTTClient')
+    __all__.append('MQTTManager')

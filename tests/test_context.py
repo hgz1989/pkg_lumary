@@ -14,8 +14,9 @@ from lumary.common.context import (
 
 
 class TestGenerateRequestId:
+    # 匹配无短横线的 32 位 UUID4 hex 格式
     _UUID4_RE = __import__('re').compile(
-        r'^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+        r'^[0-9a-f]{12}4[0-9a-f]{3}[89ab][0-9a-f]{15}$',
         __import__('re').IGNORECASE
     )
 

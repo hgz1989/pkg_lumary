@@ -202,9 +202,12 @@ def cache_response(namespace: str, expire: int = 3600) -> Callable:
 
             if not request:
                 for arg in args:
-
-                    if hasattr(arg, 'url') and hasattr(arg, 'method'):
+                    if isinstance(arg, Request):
                         request = arg
+                        break
+                    # 作为降级兜底，判断鸭子类型
+                    if hasattr(arg, 'url') and hasattr(arg, 'method'):
+                        request = arg  # type: ignore
                         break
 
             if request:

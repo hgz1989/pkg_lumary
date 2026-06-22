@@ -1,34 +1,22 @@
 """
 @Author     : zarkhan
 @CreateDate : 2026/6/21
-@Description: 可选的异步MQTT客户端与路由管理器
+@Description: 可选的MQTT客户端与路由管理器(基于paho-mqtt)
 """
 import asyncio
-import sys
+from inspect import iscoroutinefunction
 from logging import getLogger
-from threading import Thread, Event
 from typing import Any, Callable
 
 from lumary.common.utils.strings import json_dumps
 
 try:
-    import aiomqtt
-    from aiomqtt import Client
+    import paho.mqtt.client as mqtt
 
     MQTT_INSTALLED = True
 except ImportError:
     MQTT_INSTALLED = False
-    aiomqtt = Any  # type: ignore
-
-
-    class Client:  # type: ignore
-        """MQTT Client降级桩类，解决Pylance对Any | None的类型收窄警告"""
-
-        async def publish(self, topic: str, payload: Any, **kwargs: Any) -> None: ...
-
-        async def subscribe(self, topic: str, **kwargs: Any) -> None: ...
-
-        messages: Any
+    mqtt = Any  # type: ignore
 
 _logger = getLogger(__name__)
 
@@ -65,21 +53,20 @@ def topic_matches(pattern: str, topic: str) -> bool:
 
 
 class MQTTManager:
-    """异步MQTT管理器
+    """MQTT管理器 (基于paho-mqtt)
 
     提供优雅的主题订阅装饰器机制，支持一个主题绑定多个处理程序
-    如果未安装aiomqtt库，则默认所有操作静默失效，保证业务安全降级
+    利用 paho-mqtt 自带的网络循环线程，结合 asyncio.run_coroutine_threadsafe 桥接 FastAPI 异步循环
+    如果未安装paho-mqtt库，则默认所有操作静默失效，保证业务安全降级
     """
-    __slots__ = ('client', 'handlers', 'enabled', '_listen_task', '_mqtt_loop', '_mqtt_thread')
+    __slots__ = ('client', 'handlers', 'enabled', '_fastapi_loop')
 
-    def __init__(self):
+    def __init__(self) -> None:
         """初始化"""
-        self.client: Client | None = None
+        self.client: mqtt.Client | None = None
         self.handlers: dict[str, list[Callable]] = {}
         self.enabled: bool = False
-        self._listen_task: asyncio.Task | None = None
-        self._mqtt_loop: asyncio.AbstractEventLoop | None = None
-        self._mqtt_thread: Thread | None = None
+        self._fastapi_loop: asyncio.AbstractEventLoop | None = None
 
     def on_message(self, topic: str) -> Callable:
         """MQTT消息处理装饰器
@@ -94,170 +81,178 @@ class MQTTManager:
         """
 
         def decorator(func: Callable) -> Callable:
-            """内层装饰器，接收原始处理函数"""
+            """装饰器函数
+
+            Args:
+                func: 要装饰的函数
+
+            Returns:
+                装饰后的函数
+            """
             if topic not in self.handlers:
                 self.handlers[topic] = []
-
             self.handlers[topic].append(func)
             return func
 
         return decorator
 
-    async def init(self, hostname: str, port: int = 1883, **kwargs: Any) -> None:
-        """初始化MQTT客户端并启动后台监听任务
+    async def init(self, host: str, port: int = 1883, client_id: str | None = None,
+                   username: str | None = None, password: str | None = None, **kwargs: Any) -> None:
+        """初始化并连接MQTT服务器
+
+        自动拉起 paho-mqtt 的 loop_start 后台线程
 
         Args:
-            hostname: MQTT Broker主机地址
-            port: MQTT Broker端口
-            **kwargs: 透传给aiomqtt.Client的其他参数 (如username, password)
-
-        Raises:
-            RuntimeError: 如果未安装aiomqtt依赖时抛出
+            host: 服务器地址
+            port: 端口
+            client_id: 客户端ID
+            username: 用户名
+            password: 密码
+            **kwargs: 传递给 mqtt.Client 的其他参数
         """
         if not MQTT_INSTALLED:
-            raise RuntimeError('未安装aiomqtt依赖，无法启动MQTT！请使用pip install lumary[mqtt] 安装')
+            raise RuntimeError('未安装paho-mqtt依赖，无法启动MQTT！请使用pip install lumary[mqtt] 安装')
 
-        self.enabled = True
+        # 捕获 FastAPI 主线程的 event_loop，用于后续从 paho 线程中分发异步任务
+        self._fastapi_loop = asyncio.get_running_loop()
 
-        # Windows下默认ProactorEventLoop不支持add_reader/add_writer，导致aiomqtt报错
-        # 为了不影响主应用的异步子进程等功能，这里在独立线程中创建一个SelectorEventLoop来专门跑MQTT
-        if sys.platform == 'win32':
-            loop_ready_event = Event()
+        # paho-mqtt v2 回调版本要求
+        client_kwargs: dict[str, Any] = {'client_id': client_id} if client_id else {}
+        if hasattr(mqtt, 'CallbackAPIVersion'):
+            client_kwargs['callback_api_version'] = getattr(mqtt.CallbackAPIVersion, 'VERSION2', 2)
 
-            def run_mqtt_thread() -> None:
-                self._mqtt_loop = asyncio.WindowsSelectorEventLoopPolicy().new_event_loop()
-                asyncio.set_event_loop(self._mqtt_loop)
-                # 必须在事件循环所在的线程内创建Task，否则处于底层select休眠中的loop不会被唤醒
-                # _listen 是实例方法，第一参数已经是 self
-                self._listen_task = self._mqtt_loop.create_task(self._listen(hostname, port, **kwargs))
-                loop_ready_event.set()
-                self._mqtt_loop.run_forever()
+        client = mqtt.Client(**client_kwargs, **kwargs)
+        self.client = client
 
-            self._mqtt_thread = Thread(target=run_mqtt_thread, daemon=True)
-            self._mqtt_thread.start()
-            loop_ready_event.wait()
-        else:
-            self._mqtt_loop = asyncio.get_running_loop()
-            if self._mqtt_loop is not None:
-                self._listen_task = self._mqtt_loop.create_task(self._listen(hostname, port, **kwargs))
+        if username and password:
+            client.username_pw_set(username, password)
 
-        _logger.info('MQTT后台监听任务已启动，正在等待连接建立...')
-        
-        # 轮询等待连接成功，最多等待5秒
-        for _ in range(50):
-            if self.client is not None:
-                break
-            await asyncio.sleep(0.1)
-
-    async def close(self) -> None:
-        """关闭MQTT连接与监听任务"""
-        self.enabled = False
-
-        if self._listen_task and not self._listen_task.done():
-            if self._mqtt_loop and sys.platform == 'win32':
-                self._mqtt_loop.call_soon_threadsafe(self._listen_task.cancel)
-            else:
-                self._listen_task.cancel()
-
-        if self._mqtt_loop and sys.platform == 'win32':
-            # 停止独立线程的loop
-            self._mqtt_loop.call_soon_threadsafe(self._mqtt_loop.stop)
-            if self._mqtt_thread:
-                self._mqtt_thread.join(timeout=2.0)
-
-        _logger.info('MQTT监听任务已安全关闭')
-
-    async def publish(self, topic: str, payload: Any, **kwargs: Any) -> None:
-        """发布MQTT消息
-
-        Args:
-            topic: 目标主题
-            payload: 消息负载（如果是dict将自动转为JSON字符串）
-            **kwargs: 透传给publish的其他参数 (如qos, retain)
-        """
-        mqtt_c = self.client
-
-        if not self.enabled or mqtt_c is None:
-            return
-
-        if isinstance(payload, dict):
-            payload = json_dumps(payload)
+        # 绑定内部回调
+        client.on_connect = self._on_connect
+        client.on_disconnect = self._on_disconnect
+        client.on_message = self._on_paho_message
 
         try:
-            if self._mqtt_loop and sys.platform == 'win32':
-                # 跨线程调用独立事件循环中的publish
-                future = asyncio.run_coroutine_threadsafe(
-                    mqtt_c.publish(topic, payload, **kwargs),
-                    self._mqtt_loop
-                )
-                future.result()  # 等待发布完成
-            else:
-                # kwargs可能包含任意参数，如果为空应该正确解包
-                await mqtt_c.publish(topic, payload, **kwargs)
+            client.connect(host, port)
+            # 启动 paho 内部的网络收发线程
+            client.loop_start()
+            self.enabled = True
         except Exception as e:
-            _logger.error(f'MQTT发布消息失败 [{topic}]: {e}')
+            _logger.error(f'MQTT连接失败: {e}')
+            raise
 
-    async def _listen(self, hostname: str, port: int, kwargs: dict[str, Any]) -> None:
-        """内部无限循环的后台监听协程
-
-        负责维持连接、订阅主题并分发消息到对应的处理程序
-
+    def _on_connect(self, client: Any, userdata: Any, flags: Any, rc: Any, *args: Any) -> None:
+        """Paho 连接成功回调
+        
         Args:
-            hostname: 主机
-            port: 端口
-            kwargs: 其他连接参数
+            client: paho mqtt客户端实例
+            userdata: 用户自定义数据
+            flags: 响应标志
+            rc: 连接结果码
+            *args: 其他兼容参数
         """
-        while self.enabled:
-            try:
-                async with aiomqtt.Client(hostname, port=port, **kwargs) as client:
-                    self.client = client
-                    _logger.info(f'MQTT成功连接至 {hostname}:{port}')
-
-                    # 批量订阅已注册的所有主题
-                    for topic in self.handlers.keys():
-                        await client.subscribe(topic)
-                        _logger.debug(f'MQTT已订阅主题: {topic}')
-
-                    # 循环接收并分发消息
-                    async for message in client.messages:
-                        incoming_topic = str(message.topic)
-                        payload = message.payload if isinstance(message.payload, bytes) else str(
-                            message.payload).encode('utf-8')
-
-                        # 遍历路由表寻找所有匹配的处理函数
-                        for pattern, funcs in self.handlers.items():
-                            if topic_matches(pattern, incoming_topic):
-                                for func in funcs:
-                                    # 创建独立任务并发执行，避免阻塞主接收循环
-                                    if self._mqtt_loop:
-                                        self._mqtt_loop.create_task(
-                                            MQTTManager._safe_execute(func, incoming_topic, payload))
-                                    else:
-                                        asyncio.create_task(MQTTManager._safe_execute(func, incoming_topic, payload))
-
-            except aiomqtt.MqttError as e:
-                _logger.warning(f'MQTT断开连接，3秒后尝试重连: {e}')
-                await asyncio.sleep(3)
-            except asyncio.CancelledError:
-                break
-            except Exception as e:
-                _logger.error(f'MQTT监听发生未捕获异常: {e}')
-                await asyncio.sleep(3)
+        # 消除未使用变量的警告
+        _ = userdata
+        _ = flags
+        _ = args
+        
+        # paho-mqtt v2 返回的是 ReasonCode 对象，可以直接判断 is_failure
+        is_fail = getattr(rc, 'is_failure', rc != 0)
+        if not is_fail:
+            _logger.info('MQTT客户端连接成功')
+            # 连接成功后，自动订阅所有已注册的主题
+            for topic in self.handlers:
+                client.subscribe(topic)
+                _logger.info(f'MQTT已自动订阅主题: {topic}')
+        else:
+            _logger.error(f'MQTT连接被拒绝，返回码: {rc}')
 
     @staticmethod
-    async def _safe_execute(func: Callable, topic: str, payload: bytes) -> None:
-        """安全执行处理程序，防止单点报错导致整个事件循环崩溃
+    def _on_disconnect(client: Any, userdata: Any, rc: Any, *args: Any) -> None:
+        """Paho 断开连接回调
+        
+        Args:
+            client: paho mqtt客户端实例
+            userdata: 用户自定义数据
+            rc: 断开结果码
+            *args: 其他兼容参数
+        """
+        _ = client
+        _ = userdata
+        _ = args
+        _logger.warning(f'MQTT客户端已断开连接，返回码: {rc}')
+
+    def _on_paho_message(self, client: Any, userdata: Any, msg: Any) -> None:
+        """Paho 收到消息回调（运行在 Paho 的后台线程中）
+        
+        Args:
+            client: paho mqtt客户端实例
+            userdata: 用户自定义数据
+            msg: MQTT消息对象
+        """
+        _ = client
+        _ = userdata
+        
+        if not self._fastapi_loop:
+            return
+
+        topic = msg.topic
+        try:
+            payload = msg.payload.decode('utf-8')
+        except UnicodeDecodeError:
+            payload = msg.payload  # 非文本载荷保持 bytes
+
+        # 路由匹配：寻找所有匹配该 topic 的处理器
+        matched_handlers = []
+        for pattern, funcs in self.handlers.items():
+            if topic_matches(pattern, topic):
+                matched_handlers.extend(funcs)
+
+        if not matched_handlers:
+            return
+
+        # 由于当前在 paho 线程，必须通过 run_coroutine_threadsafe 投递回 FastAPI 的 async loop 执行
+        for func in matched_handlers:
+            try:
+                # 判断是否是异步函数 (使用 inspect.iscoroutinefunction 替代 asyncio.iscoroutinefunction 避免未来版本弃用)
+                if iscoroutinefunction(func):
+                    asyncio.run_coroutine_threadsafe(func(topic, payload), self._fastapi_loop)
+                else:
+                    # 同步函数直接在当前线程执行（或者考虑投入线程池以防阻塞 paho 循环）
+                    self._fastapi_loop.call_soon_threadsafe(func, topic, payload)
+            except Exception as e:
+                _logger.error(f'MQTT消息分发失败: {e}')
+
+    async def publish(self, topic: str, payload: Any, qos: int = 0, retain: bool = False) -> None:
+        """发布消息
 
         Args:
-            func: 处理程序
-            topic: 实际主题
-            payload: 消息负载
+            topic: 主题
+            payload: 消息内容（支持自动JSON序列化）
+            qos: 服务质量
+            retain: 是否保留消息
         """
-        try:
-            await func(topic, payload)
-        except Exception as e:
-            _logger.error(f'MQTT处理程序执行异常 [{topic}]: {e}', exc_info=True)
+        if not self.enabled or not self.client:
+            return
 
+        try:
+            if isinstance(payload, (dict, list)):
+                payload = json_dumps(payload)
+            elif not isinstance(payload, (str, bytes)):
+                payload = str(payload)
+
+            # paho的publish是异步（非阻塞）的，直接调用即可
+            self.client.publish(topic, payload, qos=qos, retain=retain)
+        except Exception as e:
+            _logger.error(f'MQTT发布消息失败: {e}')
+
+    async def close(self) -> None:
+        """安全关闭客户端"""
+        if self.client:
+            self.enabled = False
+            self.client.loop_stop()
+            self.client.disconnect()
+            _logger.info('MQTT客户端已安全关闭')
 
 # 全局单例
 mqtt_client = MQTTManager()
