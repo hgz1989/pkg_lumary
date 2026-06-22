@@ -4,7 +4,7 @@
 
 ## [0.2.1] - 2026-06-22
 
-### 🚀 新特性 (Features)
+### 🚀 新特性 (Features) 
 - **数据库读写分离架构**: `engine.py` 新增 `create_routing_engines`，支持主从数据库集群配置。配合 `session.py` 中的 `RoutingSession` 拦截器和 `ContextVar`，实现了对业务层代码透明的高并发主从库自动路由与流量切分。
 - **WebSocket 分布式广播**: `WSConnectionManager` 引入基于 Redis Pub/Sub 的跨实例（多 Pod/Worker）消息订阅分发能力。在多实例部署下有效解决广播消息孤岛问题。
 - **服务层类依赖注入**: 新增 `@session_factory.service()` 类装饰器，通过动态重写服务类的 `__signature__`，使得在 FastAPI 路由中可以直接使用 `service: XXXService = Depends()`，极大减少依赖样板代码。
