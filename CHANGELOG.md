@@ -2,7 +2,7 @@
 
 本文档用于记录 `lumary` 框架的所有显著变更、新特性以及性能优化。
 
-## [0.2.1] - 2026-06-22
+## [0.2.2] - 2026-06-22
 
 ### 🚀 新特性 (Features)
 - **数据库读写分离架构**: `engine.py` 新增 `create_routing_engines`，支持主从数据库集群配置。配合 `session.py` 中的 `RoutingSession` 拦截器和 `ContextVar`，实现了对业务层代码透明的高并发主从库自动路由与流量切分。
@@ -25,7 +25,7 @@
 - **IDE 静态告警清零**: 修复了 `crud.py` 等核心文件中的 PyCharm 类型检查警告，包括完善 `Select | Update` 的联合类型注解、消除重复代码块、通过反射安全获取 `is_deleted` 与 `rowcount` 属性。
 - **测试用例边界加固**: 全面修复了在模拟环境（无 Redis 依赖）下的 AsyncMock 异步协程陷阱（`AttributeError` / `cancelled` 事件循环处理延迟），并实现 `pytest` 399 个用例 100% 稳健通过。
 
-## [0.2.0] - 2026-06-21
+## [0.2.1] - 2026-06-21
 
 ### 🚀 新特性 (Features)
 - **异步 MQTT 路由系统**: 新增 `mqtt_client` 管理器，通过 `pip install lumary[mqtt]` (依赖 `aiomqtt`) 获取。

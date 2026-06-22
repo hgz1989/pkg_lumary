@@ -4,4 +4,4 @@
 @Description: 版本号定义
 """
 
-__version__ = '0.2.1'
+__version__ = '0.2.2'
