@@ -127,22 +127,27 @@ class MQTTManager:
             def run_mqtt_thread() -> None:
                 self._mqtt_loop = asyncio.WindowsSelectorEventLoopPolicy().new_event_loop()
                 asyncio.set_event_loop(self._mqtt_loop)
+                # 必须在事件循环所在的线程内创建Task，否则处于底层select休眠中的loop不会被唤醒
+                # _listen 是实例方法，第一参数已经是 self
+                self._listen_task = self._mqtt_loop.create_task(self._listen(hostname, port, **kwargs))
                 loop_ready_event.set()
                 self._mqtt_loop.run_forever()
 
             self._mqtt_thread = Thread(target=run_mqtt_thread, daemon=True)
             self._mqtt_thread.start()
             loop_ready_event.wait()
-
-            # 在独立的loop中创建监听任务
-            if self._mqtt_loop is not None:
-                self._listen_task = self._mqtt_loop.create_task(self._listen(hostname, port, kwargs))
         else:
             self._mqtt_loop = asyncio.get_running_loop()
             if self._mqtt_loop is not None:
-                self._listen_task = self._mqtt_loop.create_task(self._listen(hostname, port, kwargs))
+                self._listen_task = self._mqtt_loop.create_task(self._listen(hostname, port, **kwargs))
 
-        _logger.info('MQTT后台监听任务已启动')
+        _logger.info('MQTT后台监听任务已启动，正在等待连接建立...')
+        
+        # 轮询等待连接成功，最多等待5秒
+        for _ in range(50):
+            if self.client is not None:
+                break
+            await asyncio.sleep(0.1)
 
     async def close(self) -> None:
         """关闭MQTT连接与监听任务"""

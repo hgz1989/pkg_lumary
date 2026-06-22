@@ -26,10 +26,7 @@ __all__ = [
     # Cache
     'CacheManager',
     'cache',
-    'cache_response',
-    # MQTT
-    'mqtt_client',
-    'topic_matches'
+    'cache_response'
 ]
 
 if find_spec('redis') is not None:
@@ -42,5 +39,6 @@ if find_spec('redis') is not None:
 if find_spec('aiomqtt') is not None:
     from .mqtt import mqtt_client, topic_matches
 
-    __all__.append('mqtt_client')
     __all__.append('topic_matches')
+    __all__.append('mqtt_client')
+    __all__.append('MQTTClient')
