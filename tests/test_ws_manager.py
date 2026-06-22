@@ -310,7 +310,8 @@ class TestRedisBroadcast:
     @patch('lumary.ws.connect_manager.REDIS_INSTALLED', True)
     @patch('lumary.ws.connect_manager.aioredis')
     async def test_init_close_redis(self, mock_aioredis, manager):
-        mock_redis = AsyncMock()
+        mock_redis = MagicMock()
+        mock_redis.close = AsyncMock()  # <--- close是协程，需要单独设为AsyncMock
         mock_pubsub = AsyncMock()
         mock_redis.pubsub.return_value = mock_pubsub
         mock_aioredis.from_url.return_value = mock_redis
@@ -325,13 +326,20 @@ class TestRedisBroadcast:
         mock_pubsub.unsubscribe.assert_called_once_with('test_channel')
         mock_pubsub.close.assert_called_once()
         mock_redis.close.assert_called_once()
+        
+        import asyncio
+        await asyncio.sleep(0)  # 让出事件循环，让cancel信号被处理
         assert manager._listen_task.cancelled()
 
     @pytest.mark.asyncio
     @patch('lumary.ws.connect_manager.REDIS_INSTALLED', True)
     @patch('lumary.ws.connect_manager.aioredis')
     async def test_redis_broadcast_text(self, mock_aioredis, manager):
-        mock_redis = AsyncMock()
+        mock_redis = MagicMock()        # <--- 从AsyncMock改为MagicMock
+        mock_redis.publish = AsyncMock()# <--- publish是协程
+        mock_redis.close = AsyncMock()  # <--- close是协程
+        mock_pubsub = AsyncMock()
+        mock_redis.pubsub.return_value = mock_pubsub
         mock_aioredis.from_url.return_value = mock_redis
         await manager.init_redis('redis://localhost')
         

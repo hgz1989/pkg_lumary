@@ -2,7 +2,30 @@
 
 本文档用于记录 `lumary` 框架的所有显著变更、新特性以及性能优化。
 
-## [0.2.1] - 2026-06-21
+## [0.2.1] - 2026-06-22
+
+### 🚀 新特性 (Features)
+- **数据库读写分离架构**: `engine.py` 新增 `create_routing_engines`，支持主从数据库集群配置。配合 `session.py` 中的 `RoutingSession` 拦截器和 `ContextVar`，实现了对业务层代码透明的高并发主从库自动路由与流量切分。
+- **WebSocket 分布式广播**: `WSConnectionManager` 引入基于 Redis Pub/Sub 的跨实例（多 Pod/Worker）消息订阅分发能力。在多实例部署下有效解决广播消息孤岛问题。
+- **服务层类依赖注入**: 新增 `@session_factory.service()` 类装饰器，通过动态重写服务类的 `__signature__`，使得在 FastAPI 路由中可以直接使用 `service: XXXService = Depends()`，极大减少依赖样板代码。
+
+### ⚡ 性能优化 (Performance)
+- **批量数据操作下沉**: `CRUDBase` 中的 `remove_multi` 和 `update_multi` 支持直接执行底层 SQL 进行批量更新与删除，绕过 ORM 实例加载开销，大幅提升海量数据操作性能。
+- **分页逻辑下推**: 数据库操作基类 `CRUDBase` 增加 `get_page` 方法，直接在数据库层完成 count 统计与查询，并组装返回完整的 `PageData` 对象，减少各业务服务层的冗余计算逻辑。
+- **流式响应兼容优化**: 深度优化 `RequestIdMiddleware` 中间件，改为直接拦截 ASGI 的 `http.response.start` 事件阶段，彻底消除其对 `StreamingResponse` 大数据流式传输造成的闭包性能损耗。
+
+### 🐛 问题修复 (Bug Fixes)
+- **OpenAPI Schema 渲染异常**: 移除了导致 Swagger UI 无法推断嵌套模型（显示 "Additional properties allowed"）的自定义 `@model_serializer`，改用兼容性更好的 `ConfigDict(json_encoders=...)`，恢复清晰规范的 API 文档。
+- **物理删除事务丢失**: 修复了 `CRUDBase.remove` 及软删除时没有立即 `await self.db.flush()` 导致外部难以捕获数据库状态异常的问题。
+- **ULID 默认值生成报错**: 修复了 SQLAlchemy 模型在使用 Callable 作为字段默认值时由于框架自动传递 `context` 参数而引发的 `TypeError: <lambda>() takes 0 positional arguments but 1 was given`。
+
+### ♻️ 重构与代码规范 (Refactoring & Code Quality)
+- **全包代码规范肃清**: 编写正则检查脚手架，全面清理了项目中不规范的“中英文夹杂空格”、“注释末尾带句号”等历史遗留问题，严格对齐 `CODING_STANDARDS.md`。
+- **导入顺序极致规范**: 彻底对齐了全项目 Python 文件的导包规范，确保同组内 `import` 语句始终在 `from` 之前，并且按变量被调用的先后时间顺序严格排序。
+- **IDE 静态告警清零**: 修复了 `crud.py` 等核心文件中的 PyCharm 类型检查警告，包括完善 `Select | Update` 的联合类型注解、消除重复代码块、通过反射安全获取 `is_deleted` 与 `rowcount` 属性。
+- **测试用例边界加固**: 全面修复了在模拟环境（无 Redis 依赖）下的 AsyncMock 异步协程陷阱（`AttributeError` / `cancelled` 事件循环处理延迟），并实现 `pytest` 399 个用例 100% 稳健通过。
+
+## [0.2.0] - 2026-06-21
 
 ### 🚀 新特性 (Features)
 - **异步 MQTT 路由系统**: 新增 `mqtt_client` 管理器，通过 `pip install lumary[mqtt]` (依赖 `aiomqtt`) 获取。
