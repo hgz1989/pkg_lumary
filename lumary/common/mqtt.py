@@ -4,7 +4,9 @@
 @Description: 可选的异步MQTT客户端与路由管理器
 """
 import asyncio
+import sys
 from logging import getLogger
+from threading import Thread, Event
 from typing import Any, Callable
 
 from lumary.common.utils.strings import json_dumps
@@ -18,10 +20,14 @@ except ImportError:
     MQTT_INSTALLED = False
     aiomqtt = Any  # type: ignore
 
+
     class Client:  # type: ignore
         """MQTT Client降级桩类，解决Pylance对Any | None的类型收窄警告"""
+
         async def publish(self, topic: str, payload: Any, **kwargs: Any) -> None: ...
+
         async def subscribe(self, topic: str, **kwargs: Any) -> None: ...
+
         messages: Any
 
 _logger = getLogger(__name__)
@@ -58,13 +64,13 @@ def topic_matches(pattern: str, topic: str) -> bool:
     return len(p_levels) == len(t_levels)
 
 
-class MqttManager:
+class MQTTManager:
     """异步MQTT管理器
 
     提供优雅的主题订阅装饰器机制，支持一个主题绑定多个处理程序
     如果未安装aiomqtt库，则默认所有操作静默失效，保证业务安全降级
     """
-    __slots__ = ('client', 'handlers', 'enabled', '_listen_task')
+    __slots__ = ('client', 'handlers', 'enabled', '_listen_task', '_mqtt_loop', '_mqtt_thread')
 
     def __init__(self):
         """初始化"""
@@ -72,6 +78,8 @@ class MqttManager:
         self.handlers: dict[str, list[Callable]] = {}
         self.enabled: bool = False
         self._listen_task: asyncio.Task | None = None
+        self._mqtt_loop: asyncio.AbstractEventLoop | None = None
+        self._mqtt_thread: Thread | None = None
 
     def on_message(self, topic: str) -> Callable:
         """MQTT消息处理装饰器
@@ -102,7 +110,7 @@ class MqttManager:
             hostname: MQTT Broker主机地址
             port: MQTT Broker端口
             **kwargs: 透传给aiomqtt.Client的其他参数 (如username, password)
-            
+
         Raises:
             RuntimeError: 如果未安装aiomqtt依赖时抛出
         """
@@ -110,7 +118,30 @@ class MqttManager:
             raise RuntimeError('未安装aiomqtt依赖，无法启动MQTT！请使用pip install lumary[mqtt] 安装')
 
         self.enabled = True
-        self._listen_task = asyncio.create_task(self._listen(hostname, port, kwargs))
+
+        # Windows下默认ProactorEventLoop不支持add_reader/add_writer，导致aiomqtt报错
+        # 为了不影响主应用的异步子进程等功能，这里在独立线程中创建一个SelectorEventLoop来专门跑MQTT
+        if sys.platform == 'win32':
+            loop_ready_event = Event()
+
+            def run_mqtt_thread() -> None:
+                self._mqtt_loop = asyncio.WindowsSelectorEventLoopPolicy().new_event_loop()
+                asyncio.set_event_loop(self._mqtt_loop)
+                loop_ready_event.set()
+                self._mqtt_loop.run_forever()
+
+            self._mqtt_thread = Thread(target=run_mqtt_thread, daemon=True)
+            self._mqtt_thread.start()
+            loop_ready_event.wait()
+
+            # 在独立的loop中创建监听任务
+            if self._mqtt_loop is not None:
+                self._listen_task = self._mqtt_loop.create_task(self._listen(hostname, port, kwargs))
+        else:
+            self._mqtt_loop = asyncio.get_running_loop()
+            if self._mqtt_loop is not None:
+                self._listen_task = self._mqtt_loop.create_task(self._listen(hostname, port, kwargs))
+
         _logger.info('MQTT后台监听任务已启动')
 
     async def close(self) -> None:
@@ -118,7 +149,16 @@ class MqttManager:
         self.enabled = False
 
         if self._listen_task and not self._listen_task.done():
-            self._listen_task.cancel()
+            if self._mqtt_loop and sys.platform == 'win32':
+                self._mqtt_loop.call_soon_threadsafe(self._listen_task.cancel)
+            else:
+                self._listen_task.cancel()
+
+        if self._mqtt_loop and sys.platform == 'win32':
+            # 停止独立线程的loop
+            self._mqtt_loop.call_soon_threadsafe(self._mqtt_loop.stop)
+            if self._mqtt_thread:
+                self._mqtt_thread.join(timeout=2.0)
 
         _logger.info('MQTT监听任务已安全关闭')
 
@@ -139,22 +179,18 @@ class MqttManager:
             payload = json_dumps(payload)
 
         try:
-            await mqtt_c.publish(topic, payload, **kwargs)
+            if self._mqtt_loop and sys.platform == 'win32':
+                # 跨线程调用独立事件循环中的publish
+                future = asyncio.run_coroutine_threadsafe(
+                    mqtt_c.publish(topic, payload, **kwargs),
+                    self._mqtt_loop
+                )
+                future.result()  # 等待发布完成
+            else:
+                # kwargs可能包含任意参数，如果为空应该正确解包
+                await mqtt_c.publish(topic, payload, **kwargs)
         except Exception as e:
             _logger.error(f'MQTT发布消息失败 [{topic}]: {e}')
-
-    async def _safe_execute(self, func: Callable, topic: str, payload: bytes) -> None:
-        """安全执行处理程序，防止单点报错导致整个事件循环崩溃
-
-        Args:
-            func: 处理程序
-            topic: 实际主题
-            payload: 消息负载
-        """
-        try:
-            await func(topic, payload)
-        except Exception as e:
-            _logger.error(f'MQTT处理程序执行异常 [{topic}]: {e}', exc_info=True)
 
     async def _listen(self, hostname: str, port: int, kwargs: dict[str, Any]) -> None:
         """内部无限循环的后台监听协程
@@ -188,7 +224,11 @@ class MqttManager:
                             if topic_matches(pattern, incoming_topic):
                                 for func in funcs:
                                     # 创建独立任务并发执行，避免阻塞主接收循环
-                                    asyncio.create_task(self._safe_execute(func, incoming_topic, payload))
+                                    if self._mqtt_loop:
+                                        self._mqtt_loop.create_task(
+                                            MQTTManager._safe_execute(func, incoming_topic, payload))
+                                    else:
+                                        asyncio.create_task(MQTTManager._safe_execute(func, incoming_topic, payload))
 
             except aiomqtt.MqttError as e:
                 _logger.warning(f'MQTT断开连接，3秒后尝试重连: {e}')
@@ -199,6 +239,20 @@ class MqttManager:
                 _logger.error(f'MQTT监听发生未捕获异常: {e}')
                 await asyncio.sleep(3)
 
+    @staticmethod
+    async def _safe_execute(func: Callable, topic: str, payload: bytes) -> None:
+        """安全执行处理程序，防止单点报错导致整个事件循环崩溃
+
+        Args:
+            func: 处理程序
+            topic: 实际主题
+            payload: 消息负载
+        """
+        try:
+            await func(topic, payload)
+        except Exception as e:
+            _logger.error(f'MQTT处理程序执行异常 [{topic}]: {e}', exc_info=True)
+
 
 # 全局单例
-mqtt_client = MqttManager()
+mqtt_client = MQTTManager()
