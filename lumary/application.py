@@ -18,6 +18,7 @@ from starlette.routing import Mount
 
 from .__version__ import __version__ as lumary_version
 from .common import set_log_level
+from .common.utils import get_system_metrics
 from .handlers import build_exception_handlers
 from .lifespan import (
     HookRegistry,
@@ -26,6 +27,7 @@ from .lifespan import (
 )
 from .middleware import RequestIdMiddleware
 from .openapi import configure_openapi_schema
+from .route import LumaryRoute
 from .schemas import (
     APIResponse,
     SystemHealthOut,
@@ -57,8 +59,8 @@ class Lumary(FastAPI):
             *,
             debug: bool = False,
             title: str = 'Lumary',
-            summary: str = '',
-            description: str = '',
+            summary: str = '轻量化异步微服务开发框架，集成FastAPI、统一生命周期与多应用隔离管理',
+            description: str = 'Lumary 基于 Starlette/FastAPI 构建，提供标准化路由封装、全链路请求追踪、异步资源统一回收、多命名空间子应用挂载能力，内置软删除CRUD基类、统一异常响应与日志上下文管理，适配容器K3s部署、MCP智能体工具服务与多租户后台业务场景',
             version: str = lumary_version,
             is_sub_app: bool = False,
             enable_cors: bool = True,
@@ -86,7 +88,7 @@ class Lumary(FastAPI):
         """
         # 设置属性
         self.is_sub_app = is_sub_app
-        
+
         # 主应用默认使用全局注册表，子应用默认使用独立的空注册表以防重复执行全局钉子
         if hook_registry is not None:
             self._hook_registry = hook_registry
@@ -97,12 +99,14 @@ class Lumary(FastAPI):
         if self.is_sub_app:
             # 清空子应用根路径
             if 'root_path' in kwargs:
-                kwargs.pop('root_path')
-                _logger.debug(f'子应用 [{title}] 的root_path已被自动清除')
+                old_root = kwargs.pop('root_path')
+                _logger.info(
+                    f'子应用 [{title}] 传入了 root_path="{old_root}"，为防止路由冲突已被自动清除。请通过主应用的 mount_sub_apps 统一管控路径'
+                )
 
         # 默认中间件
         middlewares = []
-        
+
         # 子应用默认由主应用接管中间件，避免头冲突与重复执行
         if not self.is_sub_app:
             middlewares.append(
@@ -113,13 +117,18 @@ class Lumary(FastAPI):
 
             # 添加CORS中间件
             if enable_cors:
+                _allow_origins = allow_origins or ['*']
+                # 当allow_credentials=True时，allow_origins不能为['*']，浏览器会拒绝
+                # 必须指定具体的源，或者动态匹配
+                _allow_credentials = enable_cors and _allow_origins != ['*']
+
                 middlewares.append(
                     Middleware(
                         CORSMiddleware,  # type: ignore
-                        allow_origins=allow_origins or ['*'],
-                        allow_credentials=(allow_origins or ['*']) != ['*'],
+                        allow_origins=_allow_origins,
+                        allow_credentials=_allow_credentials,
                         allow_methods=allow_methods or ['*'],
-                        allow_headers=allow_headers or ['*'],
+                        allow_headers=allow_headers or ['*']
                     )
                 )
 
@@ -156,6 +165,9 @@ class Lumary(FastAPI):
 
         # 记录应用启动时间
         self._start_time: float = time()
+        # 缓存 routes 统计，避免每次遍历
+        self._sub_apps_count = 0
+        self._routes_count = 0
 
         # 设置自定义文档
         configure_openapi_schema(self)
@@ -165,9 +177,20 @@ class Lumary(FastAPI):
             # 注册系统内置接口
             self._register_system_endpoints()
 
+    def __del__(self):
+        """资源销毁兜底
+
+        尝试在对象被销毁时清理引用
+        """
+        try:
+            if hasattr(self, '_hook_registry'):
+                self._hook_registry = None
+        except (AttributeError, RecursionError):
+            pass
+
     def _register_system_endpoints(self) -> None:
         """注册系统内置接口（健康检查、详细信息、运行指标）"""
-        router = APIRouter(prefix='/system', tags=['system'])
+        router = APIRouter(prefix='/system', tags=['system'], route_class=LumaryRoute)
 
         @router.get('/health', summary='健康检查')
         async def health(_request: Request) -> APIResponse[SystemHealthOut]:
@@ -193,12 +216,17 @@ class Lumary(FastAPI):
             Returns:
                 响应数据
             """
+            # 懒加载统计路由信息
+            if self._routes_count == 0:
+                self._sub_apps_count = sum(1 for r in self.routes if isinstance(r, Mount))
+                self._routes_count = len(self.routes)
+
             data = SystemInfoOut(
                 name=self.title,
                 version=self.version,
                 debug=self.debug,
-                sub_apps_count=sum(1 for r in self.routes if isinstance(r, Mount)),
-                routes_count=len(self.routes),
+                sub_apps_count=self._sub_apps_count,
+                routes_count=self._routes_count,
                 python_version=sys.version,
             )
             return response_success(data=data, message='获取成功')
@@ -213,11 +241,13 @@ class Lumary(FastAPI):
             Returns:
                 响应数据
             """
+
             uptime = round(time() - self._start_time, 3)
-            memory_mb = -1
+            metrics_data = get_system_metrics()
+
             data = SystemMetricsOut(
                 uptime_seconds=uptime,
-                memory_mb=memory_mb,
+                **metrics_data
             )
             return response_success(data=data, message='获取成功')
 
@@ -272,11 +302,11 @@ class Lumary(FastAPI):
 
         _logger.info('开始挂载子应用')
         success_mounted_list = []
-        # 遍历目录
-        for path in apps_path.iterdir():
-            if not path.is_dir():
-                continue
 
+        # 遍历目录并强制按名称排序，保证每次启动子应用的挂载顺序一致
+        app_dirs = sorted([p for p in apps_path.iterdir() if p.is_dir()])
+
+        for path in app_dirs:
             # 获取文件夹名称
             app_folder_name = path.name
 
@@ -299,6 +329,14 @@ class Lumary(FastAPI):
                     raise RuntimeError(
                         f'禁止将子应用 [{app.title}] 挂载到另一个子应用 [{self.title}] 下'
                     )
+
+                # 检查挂载路径是否合法
+                if not mount_path.startswith('/'):
+                    raise RuntimeError(f'挂载路径必须以 / 开头: {mount_path}')
+
+                # 检查是否重复挂载
+                if mount_path in [r.path for r in self.routes if isinstance(r, Mount)]:
+                    raise RuntimeError(f'检测到重复挂载路径: {mount_path}')
 
                 self.mount(mount_path, app, app_folder_name)
                 success_mounted_list.append(app)
@@ -326,8 +364,16 @@ class Lumary(FastAPI):
             for route in app.routes:
                 if isinstance(route, Mount):
                     sub_app = route.app
-                    # 检查是否为合法的FastAPI/Starlette应用
+
+                    # 检查是否为合法的Lumary/FastAPI/Starlette应用
                     if hasattr(sub_app, 'router') and hasattr(sub_app.router, 'lifespan_context'):
-                        await stack.enter_async_context(sub_app.router.lifespan_context(sub_app))
+                        try:
+                            await stack.enter_async_context(sub_app.router.lifespan_context(sub_app))
+                        except Exception as e:
+                            _logger.error(
+                                f'子应用 [{getattr(sub_app, "title", route.name)}] 的生命周期启动失败: {e}',
+                                exc_info=True
+                            )
+                            # 如果子应用崩溃，为了不影响主应用，我们捕获它但不抛出（可根据业务需求调整为 raise）
 
             yield

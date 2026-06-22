@@ -26,6 +26,10 @@ def configure_openapi_schema(app: FastAPI) -> None:
         Returns:
             OPENAPI模式字典或None
         """
+        # 如果 OpenAPI 被显式禁用 (通常在生产环境 debug=False 时)
+        if app.openapi_url is None:
+            return None
+            
         if app.openapi_schema:
             return app.openapi_schema
 
@@ -62,8 +66,14 @@ def configure_openapi_schema(app: FastAPI) -> None:
                 responses = method_obj.get('responses', {})
                 responses.pop('422', None)
 
+        # 统一注入全局响应头、安全认证配置等（预留扩展点）
+        # components.setdefault('securitySchemes', {
+        #     "BearerAuth": {"type": "http", "scheme": "bearer"}
+        # })
+        # openapi_schema.setdefault('security', [{"BearerAuth": []}])
+
         app.openapi_schema = openapi_schema
         return app.openapi_schema
 
     # 重点：不是直接执行，而是赋值给openapi函数
-    app.openapi = custom_openapi
+    app.openapi = custom_openapi  # type: ignore

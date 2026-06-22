@@ -46,7 +46,7 @@ class _HookItem:
     priority: int
     abort_on_exception: bool
     needs_app: bool  # 是否需要注入FastAPI实例（注册时缓存签名结果）
-    timeout: float | None = None  # 单个钩子执行超时（秒），None表示不限制
+    timeout: int | float | None = None  # 单个钩子执行超时（秒），None表示不限制
 
     def __eq__(self, other: object) -> bool:
         """重写等于判断逻辑，用于去重
@@ -106,7 +106,7 @@ class HookRegistry:
             func: HookFunc,
             priority: int,
             abort_on_exception: bool,
-            timeout: float | None = None
+            timeout: int | float | None = None
     ) -> None:
         """将启动钩子注册到列表中
 
@@ -136,7 +136,7 @@ class HookRegistry:
             func: HookFunc,
             priority: int,
             abort_on_exception: bool,
-            timeout: float | None = None
+            timeout: int | float | None = None
     ) -> None:
         """将关闭钩子注册到列表中
 
@@ -339,7 +339,7 @@ class HookRegistry:
             *,
             priority: int = 50,
             abort_on_exception: bool = False,
-            timeout: float | None = None
+            timeout: int | float | None = None
     ) -> Callable[[HookFunc], HookFunc] | HookFunc:
         """注册服务关闭(Shutdown)生命周期钩子的装饰器（实例级）
 
@@ -359,7 +359,7 @@ class HookRegistry:
             *,
             priority: int = 50,
             abort_on_exception: bool = False,
-            timeout: float | None = None
+            timeout: int | float | None = None
     ) -> Callable[[HookFunc], HookFunc] | HookFunc:
         """注册服务关闭(Shutdown)生命周期钩子的装饰器（实例级）
 
@@ -429,7 +429,7 @@ def on_startup(
         *,
         priority: int = 50,
         abort_on_exception: bool = True,
-        timeout: float | None = None
+        timeout: int | float | None = None
 ) -> Callable[[HookFunc], HookFunc] | HookFunc:
     """注册服务启动(Startup)生命周期钩子的装饰器
 
@@ -451,7 +451,7 @@ def on_startup(
         func: HookFunc | None = None,
         *, priority: int = 50,
         abort_on_exception: bool = True,
-        timeout: float | None = None
+        timeout: int | float | None = None
 ) -> Callable[[HookFunc], HookFunc] | HookFunc:
     """注册服务启动(Startup)生命周期钩子的装饰器
 

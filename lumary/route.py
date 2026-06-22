@@ -29,7 +29,7 @@ def _wrap_endpoint(endpoint: Callable) -> Callable:
         包装后的路由处理函数
     """
     @wraps(endpoint)
-    async def async_wrapper(*args, **kwargs) -> Any:
+    async def async_wrapper(*args: Any, **kwargs: Any) -> Any:
         """异步路由函数的包装器
 
         Args:
@@ -43,7 +43,7 @@ def _wrap_endpoint(endpoint: Callable) -> Callable:
         return _process_raw_response(raw_response)
 
     @wraps(endpoint)
-    def sync_wrapper(*args, **kwargs) -> Any:
+    def sync_wrapper(*args: Any, **kwargs: Any) -> Any:
         """同步路由函数的包装器
 
         Args:
@@ -76,10 +76,13 @@ def _wrap_endpoint(endpoint: Callable) -> Callable:
 
         if raw_type is dict and 'code' in raw_response and 'message' in raw_response:
             from .common import get_request_id
+
             if 'request_id' not in raw_response:
                 raw_response['request_id'] = get_request_id()
+
             if 'extra' in raw_response:
                 return APIResponseWithExtra(**raw_response)
+
             return APIResponse(**raw_response)
 
         return response_success(data=raw_response)
@@ -94,7 +97,7 @@ class LumaryRoute(APIRoute):
     同时动态修正Swagger OpenAPI的response_model推导
     """
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
         """初始化路由实例，并动态修正OpenAPI响应模型推导
 
         Args:
@@ -109,11 +112,13 @@ class LumaryRoute(APIRoute):
 
         if self.response_model:
             origin_type = getattr(self.response_model, '__origin__', self.response_model)
+            
             if isinstance(origin_type, type) and issubclass(origin_type, (Response, APIResponseBase)):
                 pass
             else:
                 if getattr(self.response_model, '__origin__', None) is tuple:
                     type_args = getattr(self.response_model, '__args__', ())
+                    
                     if len(type_args) == 2:
                         data_type, extra_type = type_args
                         self.response_model = APIResponseWithExtra[data_type, extra_type]  # type: ignore
@@ -121,5 +126,8 @@ class LumaryRoute(APIRoute):
                     self.response_model = APIResponse[self.response_model]  # type: ignore
         
         # 清空内部校验字段，防止FastAPI运行时抛出ResponseValidationError
-        self.secure_cloned_response_field = None
-        self.response_field = None
+        # 注意：不同 FastAPI 版本的内部属性名称可能不同，兼容处理
+        if hasattr(self, 'secure_cloned_response_field'):
+            self.secure_cloned_response_field = None
+        if hasattr(self, 'response_field'):
+            self.response_field = None
