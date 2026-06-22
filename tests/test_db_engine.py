@@ -1,7 +1,7 @@
 """
 @Author     : zarkhan
 @CreateDate : 2026/6/17
-@Description: create_db_engine / 驱动检测工具函数单元测试
+@Description: create_db_engine/驱动检测工具函数单元测试
 """
 import pytest
 from sqlalchemy.ext.asyncio import AsyncEngine
@@ -10,11 +10,12 @@ from lumary.db.sqlalchemy.engine import (
     ASYNC_DRIVERS,
     _is_async_driver,
     _connect_args_from_url,
-    create_db_engine)
+    create_db_engine,
+    create_routing_engines)
 
 
 # ──────────────────────────────────────────────
-# ASYNC_DRIVERS 集合
+# ASYNC_DRIVERS集合
 # ──────────────────────────────────────────────
 class TestAsyncDrivers:
     def test_contains_aiosqlite(self):
@@ -99,7 +100,7 @@ class TestCreateDbEngine:
         assert engine.echo is False
 
     def test_custom_connect_args_merged(self):
-        """自定义 connect_args 会与默认 args 合并"""
+        """自定义connect_args会与默认args合并"""
         engine = create_db_engine(
             'sqlite+aiosqlite:///:memory:',
             connect_args={'timeout': 30}
@@ -107,7 +108,7 @@ class TestCreateDbEngine:
         assert isinstance(engine, AsyncEngine)
 
     def test_extra_engine_kwargs_accepted(self):
-        """额外的 engine kwargs 正常透传"""
+        """额外的engine kwargs正常透传"""
         engine = create_db_engine(
             'sqlite+aiosqlite:///:memory:',
             pool_pre_ping=False,
@@ -115,10 +116,29 @@ class TestCreateDbEngine:
         assert isinstance(engine, AsyncEngine)
 
     async def test_engine_can_connect(self):
-        """实际执行一条 SQL，验证引擎可用"""
+        """实际执行一条SQL，验证引擎可用"""
         engine = create_db_engine('sqlite+aiosqlite:///:memory:')
         async with engine.connect() as conn:
             from sqlalchemy import text
             result = await conn.execute(text('SELECT 1'))
             assert result.scalar() == 1
         await engine.dispose()
+
+# ──────────────────────────────────────────────
+# create_routing_engines
+# ──────────────────────────────────────────────
+class TestCreateRoutingEngines:
+    def test_create_routing_engines(self):
+        primary, replicas = create_routing_engines(
+            'sqlite+aiosqlite:///:memory:',
+            ['sqlite+aiosqlite:///:memory:', 'sqlite+aiosqlite:///:memory:']
+        )
+        assert isinstance(primary, AsyncEngine)
+        assert len(replicas) == 2
+        assert isinstance(replicas[0], AsyncEngine)
+        assert isinstance(replicas[1], AsyncEngine)
+
+    def test_create_routing_engines_no_replicas(self):
+        primary, replicas = create_routing_engines('sqlite+aiosqlite:///:memory:')
+        assert isinstance(primary, AsyncEngine)
+        assert len(replicas) == 0

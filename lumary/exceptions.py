@@ -140,10 +140,10 @@ class PayloadTooLargeError(HTTPException):
 
 
 class URITooLongError(HTTPException):
-    """URI 过长错误"""
+    """URI过长错误"""
 
     def __init__(self, detail: str | None = None):
-        """初始化 URI 过长错误"""
+        """初始化URI过长错误"""
         super().__init__(
             status_code=status.HTTP_414_URI_TOO_LONG,
             detail=detail or 'URI too long'
@@ -175,7 +175,7 @@ class LockedError(HTTPException):
 class TooManyRequestsError(HTTPException):
     """请求过于频繁错误
 
-    用于限流场景，可设置 Retry-After 头告知客户端重试等待时间
+    用于限流场景，可设置Retry-After头告知客户端重试等待时间
     """
 
     def __init__(self, detail: str | None = None, retry_after: int | None = None):
@@ -183,7 +183,7 @@ class TooManyRequestsError(HTTPException):
 
         Args:
             detail: 错误详情
-            retry_after: 建议重试等待秒数（自动设置 Retry-After 头）
+            retry_after: 建议重试等待秒数（自动设置Retry-After头）
         """
         headers = {'Retry-After': str(retry_after)} if retry_after is not None else None
         super().__init__(

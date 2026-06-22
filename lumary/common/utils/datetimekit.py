@@ -16,10 +16,10 @@ def add_datetime(
     minutes: int = 0,
     seconds: int = 0,
 ) -> datetime:
-    """给 datetime 对象添加指定的年月日时分秒，正确处理闰年、月份天数差异
+    """给datetime对象添加指定的年月日时分秒，正确处理闰年、月份天数差异
 
     Args:
-        dt: 原始 datetime（可以是 naive 或 aware）
+        dt: 原始datetime（可以是naive或aware）
         years: 增加的年数（负数表示减少）
         months: 增加的月数
         days: 增加的天数
@@ -28,7 +28,7 @@ def add_datetime(
         seconds: 增加的秒数
 
     Returns:
-        新的 datetime 对象，时区属性与原对象相同
+        新的datetime对象，时区属性与原对象相同
     """
     dt = dt + timedelta(days=days, hours=hours, minutes=minutes, seconds=seconds)
 

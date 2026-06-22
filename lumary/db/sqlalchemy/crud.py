@@ -1,7 +1,7 @@
 """
 @Author     : zarkhan
 @CreateDate : 2026/5/14
-@Description: SQLAlchemy CRUD 泛型基类
+@Description: SQLAlchemy CRUD泛型基类
 """
 from typing import TypeVar, Generic, Any, Sequence
 
@@ -10,7 +10,6 @@ from sqlalchemy import (
     inspect as sa_inspect,
     insert,
     func,
-    Select,
     update,
     delete,
     select,
@@ -30,15 +29,15 @@ UpdateSchemaType = TypeVar('UpdateSchemaType', bound=BaseModel)
 
 
 class CRUDBase(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
-    """CRUD 泛型基类
+    """CRUD泛型基类
 
     提供标准创建、读取、更新、删除操作(仅支持异步)
-    子类必须在类级别显式定义 model 属性
+    子类必须在类级别显式定义model属性
     """
     model: type[ModelType]
 
     def __init__(self, db: AsyncSession):
-        """初始化 CRUD 对象
+        """初始化CRUD对象
 
         Args:
             db: 异步数据库会话对象
@@ -46,9 +45,9 @@ class CRUDBase(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
         self.db = db
 
         if not hasattr(self, 'model') or self.model is None:
-            raise RuntimeError(f'{self.__class__.__name__} 必须显式定义 model 属性')
+            raise RuntimeError(f'{self.__class__.__name__} 必须显式定义model属性')
 
-        # 使用 inspect 获取映射列，兼容性更好，同时缓存避免重复计算
+        # 使用inspect获取映射列，兼容性更好，同时缓存避免重复计算
         mapper = sa_inspect(self.model)
 
         self.valid_columns = {col.key for col in mapper.mapper.column_attrs}
@@ -60,12 +59,16 @@ class CRUDBase(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
         """内部方法：触发缓存命名空间清理"""
         await cache.clear_namespace(self.cache_namespace)
 
-    def _extract_model_data(self, obj_in: BaseModel | dict[str, Any], exclude_unset: bool = False) -> dict[str, Any]:
+    def _extract_model_data(
+            self,
+            obj_in: BaseModel | dict[str, Any],
+            exclude_unset: bool = False
+    ) -> dict[str, Any]:
         """提取并过滤出属于模型有效列的数据
 
         Args:
-            obj_in: 输入的 Pydantic 模型或字典
-            exclude_unset: Pydantic 的 exclude_unset 参数
+            obj_in: 输入的Pydantic模型或字典
+            exclude_unset: Pydantic的exclude_unset参数
 
         Returns:
             过滤后的字典
@@ -77,7 +80,7 @@ class CRUDBase(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
         """创建新记录
 
         Args:
-            obj_in: 创建记录的 Pydantic 模型或 dict
+            obj_in: 创建记录的Pydantic模型或dict
 
         Returns:
             创建成功的模型实例
@@ -97,21 +100,21 @@ class CRUDBase(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
         """批量创建记录
 
         Args:
-            objs_in: 待创建的数据列表（Schema 或 dict）
+            objs_in: 待创建的数据列表（Schema或dict）
             ignore_errors: 是否忽略单条插入的错误（如唯一键冲突）
-                           如果为 False，遇到错误将抛出异常，整个事务可以被调用方回滚
-                           如果为 True，将跳过出错的记录，只插入成功的数据
+                           如果为False，遇到错误将抛出异常，整个事务可以被调用方回滚
+                           如果为True，将跳过出错的记录，只插入成功的数据
             return_objs: 是否需要返回带有数据库默认值（如ID）的完整模型对象
-                         为 True 时使用 add_all + flush（性能略低，但能拿到所有 ID）；
-                         为 False 时未来可优化为 execute(insert().values()) 提高性能
+                         为True时使用add_all + flush（性能略低，但能拿到所有ID）；
+                         为False时未来可优化为execute(insert().values()) 提高性能
 
         Returns:
             成功创建的模型实例列表
         """
-        # 场景 1：要求全部成功，且需要返回对象或直接入库
+        # 场景1：要求全部成功，且需要返回对象或直接入库
         if not ignore_errors:
             if not return_objs:
-                # 高效批量插入，避免 ORM 实例化开销
+                # 高效批量插入，避免ORM实例化开销
                 insert_data = [self._extract_model_data(obj) for obj in objs_in]
                 if insert_data:
                     await self.db.execute(insert(self.model).values(insert_data))
@@ -131,8 +134,8 @@ class CRUDBase(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
             await self._invalidate_cache()
             return db_objs
 
-        # 场景 2：忽略错误记录（如某条数据冲突不影响其他数据入库）
-        # 这种模式下只能逐条 add + flush 并捕获异常，因为批量 add_all 会导致整个 flush 失败
+        # 场景2：忽略错误记录（如某条数据冲突不影响其他数据入库）
+        # 这种模式下只能逐条add + flush并捕获异常，因为批量add_all会导致整个flush失败
         successful_objs = []
 
         for obj_in in objs_in:
@@ -141,13 +144,13 @@ class CRUDBase(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
             self.db.add(db_obj)
 
             try:
-                # 必须设置嵌套事务(savepoint)，防止一条报错导致外层主事务处于 invalid 状态
+                # 必须设置嵌套事务(savepoint)，防止一条报错导致外层主事务处于invalid状态
                 async with self.db.begin_nested():
                     await self.db.flush()
                 successful_objs.append(db_obj)
             except IntegrityError:
                 # 唯一约束冲突等数据库异常被捕获，跳过该记录
-                # 必须从 session 中移除该对象，否则后续 flush 可能再次触发同一错误
+                # 必须从session中移除该对象，否则后续flush可能再次触发同一错误
                 self.db.expunge(db_obj)
 
         if successful_objs:
@@ -191,7 +194,7 @@ class CRUDBase(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
         op_text = '软删除' if is_deleted else '恢复'
         if hasattr(db_obj, 'is_deleted'):
             # 状态冲突拦截：已是目标状态则禁止操作
-            if db_obj.is_deleted == is_deleted:
+            if getattr(db_obj, 'is_deleted') == is_deleted:
                 if is_deleted:
                     msg = '当前数据已删除，不支持执行删除操作'
                 else:
@@ -250,7 +253,7 @@ class CRUDBase(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
 
         Args:
             db_obj_in: 已存在的模型实例（优先使用）
-            obj_id: 记录主键（obj 不存在时使用）
+            obj_id: 记录主键（obj不存在时使用）
             include_deleted: 是否包含软删除的数据
 
         Returns:
@@ -271,18 +274,40 @@ class CRUDBase(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
         await self._invalidate_cache()
         return db_obj
 
+    async def _execute_bulk_stmt(self, stmt: Any, criteria: tuple[Any, ...], kwargs: dict[str, Any]) -> int:
+        """执行批量更新/删除的公共逻辑
+
+        Args:
+            stmt: 执行的SQL语句
+            criteria: SQLAlchemy查询条件元组
+            kwargs: 精确匹配的过滤条件字典
+
+        Returns:
+            影响的行数
+        """
+        if criteria:
+            stmt = stmt.where(*criteria)
+
+        stmt = self._apply_kwargs_filter(stmt, kwargs)
+
+        result = await self.db.execute(stmt)
+        await self.db.flush()
+        await self._invalidate_cache()
+
+        return getattr(result, 'rowcount', 0)
+
     async def remove_multi(
             self,
             *criteria: Any,
             physical_delete: bool = False,
             **kwargs: Any
     ) -> int:
-        """批量删除记录（直接执行 SQL，不走 ORM 实例加载，性能极高）
+        """批量删除记录（直接执行SQL，不走ORM实例加载，性能极高）
 
         支持根据模型自动选择软删除或物理删除
 
         Args:
-            *criteria: SQLAlchemy 查询条件
+            *criteria: SQLAlchemy查询条件
             physical_delete: 是否强制物理删除（如果模型支持软删除，默认走软删除更新）
             **kwargs: 精确匹配的过滤条件
 
@@ -295,20 +320,11 @@ class CRUDBase(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
             stmt = update(self.model).values(
                 is_deleted=True,
                 deleted_at=func.now()
-            ).where(self.model.is_deleted.is_(False))
+            ).where(getattr(self.model, 'is_deleted').is_(False))
         else:
             stmt = delete(self.model)
 
-        if criteria:
-            stmt = stmt.where(*criteria)
-
-        stmt = self._apply_kwargs_filter(stmt, kwargs)
-
-        result = await self.db.execute(stmt)
-        await self.db.flush()
-        await self._invalidate_cache()
-
-        return result.rowcount
+        return await self._execute_bulk_stmt(stmt, criteria, kwargs)
 
     async def update(
             self,
@@ -316,16 +332,16 @@ class CRUDBase(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
             db_obj_in: ModelType,
             obj_in: UpdateSchemaType | dict[str, Any]
     ) -> tuple[ModelType, bool]:
-        """更新单条记录（ORM 对象级更新）
+        """更新单条记录（ORM对象级更新）
 
         Args:
             db_obj_in: 需要更新的数据库模型实例
-            obj_in: 包含更新数据的字典或 Pydantic 模型
+            obj_in: 包含更新数据的字典或Pydantic模型
 
         Returns:
             更新后的模型实例和是否发生实际更新
         """
-        if hasattr(db_obj_in, 'is_deleted') and db_obj_in.is_deleted:
+        if hasattr(db_obj_in, 'is_deleted') and getattr(db_obj_in, 'is_deleted'):
             raise BadRequestError('该数据已被删除，无法执行更新操作')
 
         has_real_change = False
@@ -352,11 +368,11 @@ class CRUDBase(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
             obj_in: UpdateSchemaType | dict[str, Any],
             **kwargs: Any
     ) -> int:
-        """批量更新记录（直接执行 SQL，不走 ORM 实例加载，性能极高）
+        """批量更新记录（直接执行SQL，不走ORM实例加载，性能极高）
 
         Args:
-            *criteria: SQLAlchemy 查询条件
-            obj_in: 包含更新数据的字典或 Pydantic 模型
+            *criteria: SQLAlchemy查询条件
+            obj_in: 包含更新数据的字典或Pydantic模型
             **kwargs: 精确匹配的过滤条件
 
         Returns:
@@ -371,16 +387,7 @@ class CRUDBase(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
         # 支持软删除过滤，避免意外更新到已删除的数据
         stmt = self._apply_soft_delete_filter(stmt)
 
-        if criteria:
-            stmt = stmt.where(*criteria)
-
-        stmt = self._apply_kwargs_filter(stmt, kwargs)
-
-        result = await self.db.execute(stmt)
-        await self.db.flush()
-        await self._invalidate_cache()
-
-        return result.rowcount
+        return await self._execute_bulk_stmt(stmt, criteria, kwargs)
 
     async def get(
             self,
@@ -394,9 +401,9 @@ class CRUDBase(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
 
         Args:
             obj_id: 记录主键
-            options: SQLAlchemy 加载策略列表
+            options: SQLAlchemy加载策略列表
             include_deleted: 是否包含软删除的数据
-            **kwargs: 透传给 Session.get() 的其他参数 (如 with_for_update=True)
+            **kwargs: 透传给Session.get() 的其他参数 (如with_for_update=True)
 
         Returns:
             查询到的模型实例或为空
@@ -404,29 +411,29 @@ class CRUDBase(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
         db_obj = await self.db.get(self.model, obj_id, options=options, **kwargs)
 
         if db_obj and hasattr(db_obj, 'is_deleted'):
-            if not include_deleted and db_obj.is_deleted:
+            if not include_deleted and getattr(db_obj, 'is_deleted'):
                 return None
 
         return db_obj
 
-    def _apply_soft_delete_filter(self, stmt: Select) -> Select:
+    def _apply_soft_delete_filter(self, stmt: Any) -> Any:
         """为查询语句添加软删除过滤条件
 
         如果模型支持软删除，则自动过滤已删除的记录
 
         Args:
-            stmt: SQLAlchemy 查询语句
+            stmt: SQLAlchemy查询语句
 
         Returns:
             添加了软删除过滤条件的查询语句
         """
         if hasattr(self.model, 'is_deleted'):
-            stmt = stmt.where(self.model.is_deleted.is_(False))
+            stmt = stmt.where(getattr(self.model, 'is_deleted').is_(False))
 
         return stmt
 
     def _validate_kwargs_keys(self, keys: tuple[str, ...]) -> set[str]:
-        """验证 kwargs 键是否合法
+        """验证kwargs键是否合法
 
         Args:
             keys: 参数键的元组
@@ -436,13 +443,13 @@ class CRUDBase(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
         """
         return set(keys) - self.valid_columns
 
-    def _apply_kwargs_filter(self, stmt: Select, kwargs: dict[str, Any]) -> Select:
-        """为查询语句添加 kwargs 精确匹配过滤条件
+    def _apply_kwargs_filter(self, stmt: Any, kwargs: dict[str, Any]) -> Any:
+        """为查询语句添加kwargs精确匹配过滤条件
 
-        会校验 kwargs 中的字段是否为模型有效列，无效字段将抛出 ValueError
+        会校验kwargs中的字段是否为模型有效列，无效字段将抛出ValueError
 
         Args:
-            stmt: SQLAlchemy 查询语句
+            stmt: SQLAlchemy查询语句
             kwargs: 精确匹配的过滤条件键值对
 
         Returns:
@@ -465,10 +472,10 @@ class CRUDBase(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
             include_deleted: bool = False,
             **kwargs: Any
     ) -> ModelType | None:
-        """根据多个字段条件获取单条记录（AND 关系）
+        """根据多个字段条件获取单条记录（AND关系）
 
         Args:
-            options: SQLAlchemy 加载策略列表，用于外键关联查询
+            options: SQLAlchemy加载策略列表，用于外键关联查询
             include_deleted: 是否包含软删除的数据
             **kwargs: 字段名和值的键值对
 
@@ -485,7 +492,7 @@ class CRUDBase(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
         if options:
             stmt = stmt.options(*options)
 
-        # 优化：添加 limit(2) 防止多条数据时的全表扫描，2条足够触发 scalar_one_or_none 的多条报错
+        # 优化：添加limit(2) 防止多条数据时的全表扫描，2条足够触发scalar_one_or_none的多条报错
         stmt = stmt.limit(2)
 
         result = await self.db.execute(stmt)
@@ -500,7 +507,7 @@ class CRUDBase(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
         """统计记录总数
 
         Args:
-            *criteria: SQLAlchemy 查询条件
+            *criteria: SQLAlchemy查询条件
             include_deleted: 是否包含软删除的数据
             **kwargs: 精确匹配的过滤条件
 
@@ -532,13 +539,13 @@ class CRUDBase(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
         """获取多条记录支持分页、条件过滤和排序
 
         Args:
-            *criteria: SQLAlchemy 查询条件 (如 model.age > 18)
+            *criteria: SQLAlchemy查询条件 (如model.age > 18)
             skip: 跳过的记录数量
             limit: 返回的最大记录数量
-            order_by: 排序字段或字段列表 (如 model.id.desc())
-            options: SQLAlchemy 加载策略列表，用于外键关联查询
+            order_by: 排序字段或字段列表 (如model.id.desc())
+            options: SQLAlchemy加载策略列表，用于外键关联查询
             include_deleted: 是否包含软删除的数据
-            **kwargs: 精确匹配的过滤条件 (如 status=1)
+            **kwargs: 精确匹配的过滤条件 (如status=1)
 
         Returns:
             模型实例序列
@@ -570,38 +577,35 @@ class CRUDBase(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
             self,
             *criteria: Any,
             page: int = 1,
-            size: int = 100,
+            size: int = 10,
             order_by: Any | Sequence[Any] | None = None,
             options: list | None = None,
             include_deleted: bool = False,
             **kwargs: Any,
     ) -> PageData[ModelType]:
-        """获取分页数据，自动查询总数并构建 PageData
-
-        封装了先查总数再查分页数据的标准分页流程，调用方无需手动计算 skip
+        """获取分页数据（自动统计总数并构建PageData）
 
         Args:
-            *criteria: SQLAlchemy 查询条件 (如 model.age > 18)
-            page: 当前页码（从 1 开始）
-            size: 每页数量
-            order_by: 排序字段或字段列表 (如 model.id.desc())
-            options: SQLAlchemy 加载策略列表，用于外键关联查询
+            *criteria: SQLAlchemy查询条件
+            page: 当前页码（从1开始）
+            size: 每页条数
+            order_by: 排序字段或字段列表
+            options: SQLAlchemy加载策略列表
             include_deleted: 是否包含软删除的数据
-            **kwargs: 精确匹配的过滤条件 (如 status=1)
+            **kwargs: 精确匹配的过滤条件
 
         Returns:
-            包含当前页数据与分页元信息的 PageData 对象
+            构建好的分页响应对象
         """
-        skip = (page - 1) * size
-        total = await self.get_count(
-            *criteria,
-            include_deleted=include_deleted,
-            **kwargs
-        )
+        # 1. 统计总数
+        total = await self.get_count(*criteria, include_deleted=include_deleted, **kwargs)
 
+        # 2. 如果总数为0，直接返回空分页数据
         if total == 0:
-            return PageData.build(items=[], page=page, size=size, total=0)
+            return PageData.build([], page=page, size=size, total=0)
 
+        # 3. 计算offset并查询数据
+        skip = (page - 1) * size
         items = await self.get_multi(
             *criteria,
             skip=skip,
@@ -609,19 +613,20 @@ class CRUDBase(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
             order_by=order_by,
             options=options,
             include_deleted=include_deleted,
-            **kwargs,
+            **kwargs
         )
-        return PageData.build(items=list(items), page=page, size=size, total=total)
+
+        return PageData.build(items, page=page, size=size, total=total)
 
     async def execute_stmt(self, *, stmt: Any, options: list | None = None) -> Any:
-        """执行外部传入的 SQLAlchemy 语句
+        """执行外部传入的SQLAlchemy语句
 
-        支持 Select / Insert / Update / Delete 等任意可执行语句，
-        调用方自行处理返回结果（scalars / fetchone / fetchall 等）
+        支持Select / Insert / Update / Delete等任意可执行语句，
+        调用方自行处理返回结果（scalars / fetchone / fetchall等）
 
         Args:
-            stmt: SQLAlchemy 可执行语句
-            options: SQLAlchemy 加载策略列表，用于外键关联查询
+            stmt: SQLAlchemy可执行语句
+            options: SQLAlchemy加载策略列表，用于外键关联查询
 
         Returns:
             语句执行结果
@@ -632,15 +637,15 @@ class CRUDBase(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
         return await self.db.execute(stmt)
 
     async def execute_sql(self, *, sql: str, params: dict[str, Any] | None = None) -> Any:
-        """执行原始 SQL 语句
+        """执行原始SQL语句
 
-        调用方自行处理返回结果（scalars / fetchone / fetchall 等）
+        调用方自行处理返回结果（scalars / fetchone / fetchall等）
 
         Args:
-            sql: 原始 SQL 语句文本
-            params: SQL 参数绑定
+            sql: 原始SQL语句文本
+            params: SQL参数绑定
 
         Returns:
-            SQL 执行结果
+            SQL执行结果
         """
         return await self.db.execute(text(sql), params or {})

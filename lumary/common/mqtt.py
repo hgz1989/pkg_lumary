@@ -1,7 +1,7 @@
 """
 @Author     : zarkhan
 @CreateDate : 2026/6/21
-@Description: 可选的异步 MQTT 客户端与路由管理器
+@Description: 可选的异步MQTT客户端与路由管理器
 """
 import asyncio
 from logging import getLogger
@@ -19,7 +19,7 @@ except ImportError:
     aiomqtt = Any  # type: ignore
 
     class Client:  # type: ignore
-        """MQTT Client 降级桩类，解决 Pylance 对 Any | None 的类型收窄警告"""
+        """MQTT Client降级桩类，解决Pylance对Any | None的类型收窄警告"""
         async def publish(self, topic: str, payload: Any, **kwargs: Any) -> None: ...
         async def subscribe(self, topic: str, **kwargs: Any) -> None: ...
         messages: Any
@@ -28,15 +28,15 @@ _logger = getLogger(__name__)
 
 
 def topic_matches(pattern: str, topic: str) -> bool:
-    """判断实际 topic 是否匹配带通配符的 pattern
+    """判断实际topic是否匹配带通配符的pattern
 
-    支持 MQTT 标准通配符：
+    支持MQTT标准通配符：
     - `+` 匹配单层级
     - `#` 匹配多层级
 
     Args:
-        pattern: 订阅的模式字符串（如 sensor/+/temp）
-        topic: 实际接收到的主题（如 sensor/room1/temp）
+        pattern: 订阅的模式字符串（如sensor/+/temp）
+        topic: 实际接收到的主题（如sensor/room1/temp）
 
     Returns:
         是否匹配成功
@@ -59,10 +59,10 @@ def topic_matches(pattern: str, topic: str) -> bool:
 
 
 class MqttManager:
-    """异步 MQTT 管理器
+    """异步MQTT管理器
 
     提供优雅的主题订阅装饰器机制，支持一个主题绑定多个处理程序
-    如果未安装 aiomqtt 库，则默认所有操作静默失效，保证业务安全降级
+    如果未安装aiomqtt库，则默认所有操作静默失效，保证业务安全降级
     """
     __slots__ = ('client', 'handlers', 'enabled', '_listen_task')
 
@@ -74,7 +74,7 @@ class MqttManager:
         self._listen_task: asyncio.Task | None = None
 
     def on_message(self, topic: str) -> Callable:
-        """MQTT 消息处理装饰器
+        """MQTT消息处理装饰器
 
         允许为同一个主题绑定多个处理函数。当收到消息时，所有匹配的函数将并发执行
 
@@ -96,39 +96,39 @@ class MqttManager:
         return decorator
 
     async def init(self, hostname: str, port: int = 1883, **kwargs: Any) -> None:
-        """初始化 MQTT 客户端并启动后台监听任务
+        """初始化MQTT客户端并启动后台监听任务
 
         Args:
-            hostname: MQTT Broker 主机地址
-            port: MQTT Broker 端口
-            **kwargs: 透传给 aiomqtt.Client 的其他参数 (如 username, password)
+            hostname: MQTT Broker主机地址
+            port: MQTT Broker端口
+            **kwargs: 透传给aiomqtt.Client的其他参数 (如username, password)
             
         Raises:
-            RuntimeError: 如果未安装 aiomqtt 依赖时抛出
+            RuntimeError: 如果未安装aiomqtt依赖时抛出
         """
         if not MQTT_INSTALLED:
-            raise RuntimeError('未安装 aiomqtt 依赖，无法启动 MQTT！请使用 pip install lumary[mqtt] 安装')
+            raise RuntimeError('未安装aiomqtt依赖，无法启动MQTT！请使用pip install lumary[mqtt] 安装')
 
         self.enabled = True
         self._listen_task = asyncio.create_task(self._listen(hostname, port, kwargs))
-        _logger.info('MQTT 后台监听任务已启动')
+        _logger.info('MQTT后台监听任务已启动')
 
     async def close(self) -> None:
-        """关闭 MQTT 连接与监听任务"""
+        """关闭MQTT连接与监听任务"""
         self.enabled = False
 
         if self._listen_task and not self._listen_task.done():
             self._listen_task.cancel()
 
-        _logger.info('MQTT 监听任务已安全关闭')
+        _logger.info('MQTT监听任务已安全关闭')
 
     async def publish(self, topic: str, payload: Any, **kwargs: Any) -> None:
-        """发布 MQTT 消息
+        """发布MQTT消息
 
         Args:
             topic: 目标主题
-            payload: 消息负载（如果是 dict 将自动转为 JSON 字符串）
-            **kwargs: 透传给 publish 的其他参数 (如 qos, retain)
+            payload: 消息负载（如果是dict将自动转为JSON字符串）
+            **kwargs: 透传给publish的其他参数 (如qos, retain)
         """
         mqtt_c = self.client
 
@@ -141,7 +141,7 @@ class MqttManager:
         try:
             await mqtt_c.publish(topic, payload, **kwargs)
         except Exception as e:
-            _logger.error(f'MQTT 发布消息失败 [{topic}]: {e}')
+            _logger.error(f'MQTT发布消息失败 [{topic}]: {e}')
 
     async def _safe_execute(self, func: Callable, topic: str, payload: bytes) -> None:
         """安全执行处理程序，防止单点报错导致整个事件循环崩溃
@@ -154,7 +154,7 @@ class MqttManager:
         try:
             await func(topic, payload)
         except Exception as e:
-            _logger.error(f'MQTT 处理程序执行异常 [{topic}]: {e}', exc_info=True)
+            _logger.error(f'MQTT处理程序执行异常 [{topic}]: {e}', exc_info=True)
 
     async def _listen(self, hostname: str, port: int, kwargs: dict[str, Any]) -> None:
         """内部无限循环的后台监听协程
@@ -170,12 +170,12 @@ class MqttManager:
             try:
                 async with aiomqtt.Client(hostname, port=port, **kwargs) as client:
                     self.client = client
-                    _logger.info(f'MQTT 成功连接至 {hostname}:{port}')
+                    _logger.info(f'MQTT成功连接至 {hostname}:{port}')
 
                     # 批量订阅已注册的所有主题
                     for topic in self.handlers.keys():
                         await client.subscribe(topic)
-                        _logger.debug(f'MQTT 已订阅主题: {topic}')
+                        _logger.debug(f'MQTT已订阅主题: {topic}')
 
                     # 循环接收并分发消息
                     async for message in client.messages:
@@ -191,12 +191,12 @@ class MqttManager:
                                     asyncio.create_task(self._safe_execute(func, incoming_topic, payload))
 
             except aiomqtt.MqttError as e:
-                _logger.warning(f'MQTT 断开连接，3秒后尝试重连: {e}')
+                _logger.warning(f'MQTT断开连接，3秒后尝试重连: {e}')
                 await asyncio.sleep(3)
             except asyncio.CancelledError:
                 break
             except Exception as e:
-                _logger.error(f'MQTT 监听发生未捕获异常: {e}')
+                _logger.error(f'MQTT监听发生未捕获异常: {e}')
                 await asyncio.sleep(3)
 
 

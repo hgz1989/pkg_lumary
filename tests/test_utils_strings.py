@@ -1,7 +1,7 @@
 """
 @Author     : zarkhan
 @CreateDate : 2026/6/17
-@Description: strings 工具函数单元测试
+@Description: strings工具函数单元测试
 """
 import json
 import pytest
@@ -111,7 +111,7 @@ class TestJsonDumps:
         assert json.loads(json_dumps(data)) == data
 
     def test_serialize_chinese(self):
-        """中文字符不应被 ASCII 转义"""
+        """中文字符不应被ASCII转义"""
         data = {'name': '张三'}
         result = json_dumps(data)
         assert '张三' in result
@@ -142,7 +142,7 @@ class TestJsonLoads:
 
 
 # ──────────────────────────────────────────────
-# HAS_ORJSON 标志
+# HAS_ORJSON标志
 # ──────────────────────────────────────────────
 class TestHasOrjson:
     def test_has_orjson_is_bool(self):

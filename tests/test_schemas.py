@@ -23,7 +23,7 @@ from lumary.schemas import (
 
 
 # ──────────────────────────────────────────────
-# 辅助 Schema
+# 辅助Schema
 # ──────────────────────────────────────────────
 class _Item(SchemaBase):
     name: str
@@ -40,7 +40,7 @@ class TestSchemaBase:
         assert not hasattr(obj, 'extra_field')
 
     def test_from_attributes(self):
-        """支持从 ORM-like 对象读取属性"""
+        """支持从ORM-like对象读取属性"""
         class _FakeOrm:
             name = 'orm'
             value = 99
@@ -142,7 +142,7 @@ class TestPageData:
         assert pd.pages == 0
 
     def test_build_size_zero_safe(self):
-        """size=0 时不应触发 ZeroDivisionError，pages 应为 0"""
+        """size=0时不应触发ZeroDivisionError，pages应为0"""
         pd = PageData.build(items=[], page=1, size=0, total=100)
         assert pd.pages == 0
 
@@ -183,7 +183,7 @@ class TestResponseFunctions:
         assert resp.data is None
 
     def test_response_fail_default_message(self):
-        # response_fail 必须传入 message
+        # response_fail必须传入message
         with pytest.raises(TypeError):
             response_fail(code=500)
 

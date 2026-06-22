@@ -20,7 +20,7 @@ from .schemas import (
 
 
 def _wrap_endpoint(endpoint: Callable) -> Callable:
-    """包装路由函数，将其返回值统一包装为 APIResponse
+    """包装路由函数，将其返回值统一包装为APIResponse
 
     Args:
         endpoint: 原始的路由处理函数
@@ -63,12 +63,12 @@ def _wrap_endpoint(endpoint: Callable) -> Callable:
             raw_response: 路由函数返回的原始数据
 
         Returns:
-            经过 APIResponse 包装后的数据
+            经过APIResponse包装后的数据
         """
         if isinstance(raw_response, (Response, APIResponseBase)):
             return raw_response
 
-        # 使用 exact type matching 替代 isinstance，绕过 MRO 查找，提升高并发下的纳秒级性能
+        # 使用exact type matching替代isinstance，绕过MRO查找，提升高并发下的纳秒级性能
         raw_type = type(raw_response)
 
         if raw_type is tuple and len(raw_response) == 2:
@@ -90,18 +90,18 @@ def _wrap_endpoint(endpoint: Callable) -> Callable:
 class LumaryRoute(APIRoute):
     """自动包装响应的自定义路由类
 
-    能够拦截路由函数的返回值，并自动包装为标准的 APIResponse 或 APIResponseWithExtra，
-    同时动态修正 Swagger OpenAPI 的 response_model 推导
+    能够拦截路由函数的返回值，并自动包装为标准的APIResponse或APIResponseWithExtra，
+    同时动态修正Swagger OpenAPI的response_model推导
     """
 
     def __init__(self, *args, **kwargs):
-        """初始化路由实例，并动态修正 OpenAPI 响应模型推导
+        """初始化路由实例，并动态修正OpenAPI响应模型推导
 
         Args:
             *args: 路由初始化位置参数
             **kwargs: 路由初始化关键字参数
         """
-        # 替换 endpoint，使底层依赖注入和序列化针对包装后的结果
+        # 替换endpoint，使底层依赖注入和序列化针对包装后的结果
         if 'endpoint' in kwargs:
             kwargs['endpoint'] = _wrap_endpoint(kwargs['endpoint'])
             
@@ -120,6 +120,6 @@ class LumaryRoute(APIRoute):
                 else:
                     self.response_model = APIResponse[self.response_model]  # type: ignore
         
-        # 清空内部校验字段，防止 FastAPI 运行时抛出 ResponseValidationError
+        # 清空内部校验字段，防止FastAPI运行时抛出ResponseValidationError
         self.secure_cloned_response_field = None
         self.response_field = None

@@ -7,7 +7,7 @@ from datetime import datetime
 from math import ceil
 from typing import TypeVar, Generic, Sequence, Any
 
-from pydantic import BaseModel, ConfigDict, Field, model_serializer
+from pydantic import BaseModel, ConfigDict, Field
 
 from .__version__ import __version__ as lumary_version
 from .common import get_request_id
@@ -17,24 +17,24 @@ E = TypeVar('E')  # 扩展结构体
 
 
 class SchemaBase(BaseModel):
-    """全局所有 Pydantic Schema 基类
+    """全局所有Pydantic Schema基类
 
     统一配置、统一行为
     """
     model_config = ConfigDict(
-        # ✅ 1. 核心：允许从 ORM 对象读取属性（必须）
+        # ✅ 1. 核心：允许从ORM对象读取属性（必须）
         from_attributes=True,
 
-        # ✅ 2. 允许使用别名（例如 camelCase 字段）
+        # ✅ 2. 允许使用别名（例如camelCase字段）
         populate_by_name=True,
 
         # ✅ 3. 忽略多余字段（安全！前端传多余字段不会报错）
         extra='ignore',
 
-        # ✅ 4. 允许任意类型（支持泛型绑定 ORM 模型等）
+        # ✅ 4. 允许任意类型（支持泛型绑定ORM模型等）
         arbitrary_types_allowed=True,
 
-        # ✅ 5. 全局配置 datetime 序列化格式（原生支持，完美兼容 OpenAPI）
+        # ✅ 5. 全局配置datetime序列化格式（原生支持，完美兼容OpenAPI）
         json_encoders={
             datetime: lambda v: v.strftime('%Y-%m-%d %H:%M:%S')
         }
@@ -78,7 +78,7 @@ class SystemInfoOut(SchemaBase):
     debug: bool = Field(description='是否处于调试模式')
     routes_count: int = Field(description='已注册路由数量')
     sub_apps_count: int = Field(description='已挂载子应用数量')
-    python_version: str = Field(description='Python 运行时版本')
+    python_version: str = Field(description='Python运行时版本')
 
 
 class SystemMetricsOut(SchemaBase):
@@ -122,7 +122,7 @@ class PageData(SchemaBase, Generic[T]):
 
 
 class APIResponseBase(SchemaBase):
-    """底层基础响应，同时承载 data + extra 两套泛型"""
+    """底层基础响应，同时承载data + extra两套泛型"""
     request_id: str = Field(description='请求唯一追踪ID')
     code: int = Field(default=0, description='状态码，0为成功，其他为错误')
     message: str = Field(default='操作成功', description='提示信息')

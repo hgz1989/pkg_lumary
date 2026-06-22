@@ -1,7 +1,7 @@
 """
 @Author     : zarkhan
 @CreateDate : 2026/6/17
-@Description: LumaryRoute 自动响应包装单元测试
+@Description: LumaryRoute自动响应包装单元测试
 """
 import pytest
 from fastapi import FastAPI, APIRouter
@@ -82,7 +82,7 @@ def test_dict_passthrough(client: TestClient):
     assert data["code"] == 0
     assert data["message"] == "自定义成功"
     assert data["data"] == {"foo": "bar"}
-    # 虽然是透传字典，但如果没带 request_id，我们在 schemas 的 APIResponse 解析时会自动补全
+    # 虽然是透传字典，但如果没带request_id，我们在schemas的APIResponse解析时会自动补全
     assert "request_id" in data
 
 

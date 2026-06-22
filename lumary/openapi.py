@@ -1,7 +1,7 @@
 """
 @Author     : zarkhan
 @CreateDate : 2026/5/14
-@Description: OpenAPI 文档自定义配置
+@Description: OpenAPI文档自定义配置
 """
 from logging import getLogger
 from typing import Any
@@ -13,15 +13,15 @@ _logger = getLogger(__name__)
 
 
 def configure_openapi_schema(app: FastAPI) -> None:
-    """配置 OpenAPI Schema
+    """配置OpenAPI Schema
 
     Args:
         app: FastAPI实例对象
     """
-    _logger.debug(f'[{app.title}] 配置自定义 OpenAPI Schema...')
+    _logger.debug(f'[{app.title}] 配置自定义OpenAPI Schema...')
 
     def custom_openapi() -> dict[str, Any] | None:
-        """自定义 OpenAPI Schema
+        """自定义OpenAPI Schema
 
         Returns:
             OPENAPI模式字典或None
@@ -48,15 +48,15 @@ def configure_openapi_schema(app: FastAPI) -> None:
         components = openapi_schema.setdefault('components', {})
         schemas = components.setdefault('schemas', {})
 
-        # 删掉 ValidationError 和 HTTPValidationError
+        # 删掉ValidationError和HTTPValidationError
         schemas.pop('ValidationError', None)
         schemas.pop('HTTPValidationError', None)
 
-        # 删掉所有接口的 422
+        # 删掉所有接口的422
         paths = openapi_schema.get('paths', {})
         for path in paths.values():
             for method_obj in path.values():
-                # 跳过非字典类型的字段（如 parameters、summary 等）
+                # 跳过非字典类型的字段（如parameters、summary等）
                 if not isinstance(method_obj, dict):
                     continue
                 responses = method_obj.get('responses', {})
@@ -65,5 +65,5 @@ def configure_openapi_schema(app: FastAPI) -> None:
         app.openapi_schema = openapi_schema
         return app.openapi_schema
 
-    # 重点：不是直接执行，而是赋值给 openapi 函数
+    # 重点：不是直接执行，而是赋值给openapi函数
     app.openapi = custom_openapi

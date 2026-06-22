@@ -1,13 +1,15 @@
 """
 @Author     : zarkhan
 @CreateDate : 2026/6/17
-@Description: setup_logger / 日志轮转 Handler 单元测试
+@Description: setup_logger / 日志轮转Handler单元测试
 """
+import json
 import logging
 import re
 from datetime import datetime
 from logging.handlers import TimedRotatingFileHandler
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 
@@ -155,7 +157,7 @@ class TestSetupLogger:
         assert (tmp_path / 'app.log').exists()
 
     def test_no_duplicate_file_handler(self, tmp_path):
-        """多次调用 setup_logger 相同路径不应重复添加 FileHandler"""
+        """多次调用setup_logger相同路径不应重复添加FileHandler"""
         setup_logger(log_dir=str(tmp_path), filename='dedup.log', rotation='day')
         setup_logger(log_dir=str(tmp_path), filename='dedup.log', rotation='day')
         root = logging.getLogger()

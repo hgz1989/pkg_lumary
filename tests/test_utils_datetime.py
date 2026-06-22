@@ -1,7 +1,7 @@
 """
 @Author     : zarkhan
 @CreateDate : 2026/6/17
-@Description: add_datetime 工具函数全场景单元测试
+@Description: add_datetime工具函数全场景单元测试
 """
 from datetime import datetime, timezone, timedelta
 
@@ -50,7 +50,7 @@ class TestAddDatetimeMonths:
         assert result == datetime(2026, 2, 28)
 
     def test_add_months_leap_year(self):
-        """非闰年 1月31日 + 1月 → 2月28日；闰年 → 2月29日"""
+        """非闰年1月31日 + 1月 → 2月28日；闰年 → 2月29日"""
         dt_non_leap = datetime(2026, 1, 31)
         dt_leap = datetime(2024, 1, 31)
         assert add_datetime(dt_non_leap, months=1).day == 28
@@ -109,7 +109,7 @@ class TestAddDatetimeCombined:
         assert result == datetime(2027, 3, 4, 4, 5, 6)
 
     def test_timezone_aware_preserved(self):
-        """timezone-aware datetime 操作后时区信息保留"""
+        """timezone-aware datetime操作后时区信息保留"""
         tz = timezone(timedelta(hours=8))
         dt = datetime(2026, 6, 1, 12, 0, 0, tzinfo=tz)
         result = add_datetime(dt, days=1)

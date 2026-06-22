@@ -1,7 +1,7 @@
 """
 @Author     : zarkhan
 @CreateDate : 2026/6/17
-@Description: SoftDeleteMixin / AuditMixin 字段定义测试
+@Description: SoftDeleteMixin / AuditMixin字段定义测试
 """
 import pytest
 from sqlalchemy import String, inspect as sa_inspect
@@ -46,7 +46,7 @@ class TestSoftDeleteMixin:
 
     def test_is_deleted_default_false(self):
         obj = _SoftModel(title='t')
-        # 通过列的 default 属性验证
+        # 通过列的default属性验证
         col = _SoftModel.__table__.c['is_deleted']
         assert col.default.arg is False
 
@@ -93,7 +93,7 @@ class TestAuditMixin:
 
 
 # ──────────────────────────────────────────────
-# 组合 Mixin
+# 组合Mixin
 # ──────────────────────────────────────────────
 class TestFullMixinModel:
     def _cols(self, model):
@@ -111,7 +111,7 @@ class TestFullMixinModel:
 
 
 # ──────────────────────────────────────────────
-# ModelBase 基础字段
+# ModelBase基础字段
 # ──────────────────────────────────────────────
 class TestModelBase:
     def _cols(self, model):
@@ -137,7 +137,7 @@ class TestModelBase:
 
     def test_id_default_generates_ulid(self):
         obj = _SoftModel(title='test')
-        # 触发 default 函数
+        # 触发default函数
         if callable(_SoftModel.__table__.c['id'].default.arg):
             try:
                 generated = _SoftModel.__table__.c['id'].default.arg(None)

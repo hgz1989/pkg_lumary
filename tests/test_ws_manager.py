@@ -1,7 +1,7 @@
 """
 @Author     : zarkhan
 @CreateDate : 2026/6/17
-@Description: WSConnectionManager 单元测试（使用 MagicMock 模拟 WebSocket）
+@Description: WSConnectionManager单元测试（使用MagicMock模拟WebSocket）
 """
 import time
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -12,7 +12,7 @@ from lumary.ws.connect_manager import WSConnectionManager
 
 
 # ──────────────────────────────────────────────
-# 辅助：创建模拟 WebSocket
+# 辅助：创建模拟WebSocket
 # ──────────────────────────────────────────────
 def _make_ws() -> MagicMock:
     ws = MagicMock()
@@ -295,3 +295,57 @@ class TestDunderMethods:
 
     def test_groups_property(self, manager):
         assert isinstance(manager.groups, list)
+
+# ──────────────────────────────────────────────
+# Redis Pub/Sub分布式广播测试
+# ──────────────────────────────────────────────
+class TestRedisBroadcast:
+    @pytest.mark.asyncio
+    @patch('lumary.ws.connect_manager.REDIS_INSTALLED', False)
+    async def test_init_redis_raises_when_not_installed(self, manager):
+        with pytest.raises(RuntimeError, match='未安装redis依赖'):
+            await manager.init_redis('redis://localhost')
+
+    @pytest.mark.asyncio
+    @patch('lumary.ws.connect_manager.REDIS_INSTALLED', True)
+    @patch('lumary.ws.connect_manager.aioredis')
+    async def test_init_close_redis(self, mock_aioredis, manager):
+        mock_redis = AsyncMock()
+        mock_pubsub = AsyncMock()
+        mock_redis.pubsub.return_value = mock_pubsub
+        mock_aioredis.from_url.return_value = mock_redis
+        
+        await manager.init_redis('redis://localhost', 'test_channel')
+        
+        mock_aioredis.from_url.assert_called_once_with('redis://localhost', decode_responses=True)
+        mock_pubsub.subscribe.assert_called_once_with('test_channel')
+        assert manager._listen_task is not None
+        
+        await manager.close_redis()
+        mock_pubsub.unsubscribe.assert_called_once_with('test_channel')
+        mock_pubsub.close.assert_called_once()
+        mock_redis.close.assert_called_once()
+        assert manager._listen_task.cancelled()
+
+    @pytest.mark.asyncio
+    @patch('lumary.ws.connect_manager.REDIS_INSTALLED', True)
+    @patch('lumary.ws.connect_manager.aioredis')
+    async def test_redis_broadcast_text(self, mock_aioredis, manager):
+        mock_redis = AsyncMock()
+        mock_aioredis.from_url.return_value = mock_redis
+        await manager.init_redis('redis://localhost')
+        
+        await manager.broadcast_text('hello redis', group='group1', exclude={'c1'})
+        
+        mock_redis.publish.assert_called_once()
+        args, kwargs = mock_redis.publish.call_args
+        assert args[0] == 'lumary_ws_broadcast'
+        import json
+        payload = json.loads(args[1])
+        assert payload['sender_id'] == manager._instance_id
+        assert payload['type'] == 'text'
+        assert payload['content'] == 'hello redis'
+        assert payload['group'] == 'group1'
+        assert payload['exclude'] == ['c1']
+        
+        await manager.close_redis()

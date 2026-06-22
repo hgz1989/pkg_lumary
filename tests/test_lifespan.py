@@ -1,7 +1,7 @@
 """
 @Author     : zarkhan
 @CreateDate : 2026/6/17
-@Description: HookRegistry 生命周期钩子单元测试
+@Description: HookRegistry生命周期钩子单元测试
 """
 import asyncio
 import pytest
@@ -15,7 +15,7 @@ from lumary.lifespan import HookRegistry
 # ──────────────────────────────────────────────
 @pytest.fixture
 def registry():
-    """每个测试用独立的 HookRegistry 实例，避免状态污染"""
+    """每个测试用独立的HookRegistry实例，避免状态污染"""
     return HookRegistry()
 
 
@@ -81,7 +81,7 @@ class TestHookRegistration:
 
 
 # ──────────────────────────────────────────────
-# 装饰器 API
+# 装饰器API
 # ──────────────────────────────────────────────
 class TestDecoratorAPI:
     def test_on_startup_decorator_no_args(self, registry):
@@ -136,7 +136,7 @@ class TestHookExecution:
         assert results == ['shutdown']
 
     async def test_hook_with_app_arg(self, registry, dummy_app):
-        """接收 app 参数的钩子能收到 FastAPI 实例"""
+        """接收app参数的钩子能收到FastAPI实例"""
         received = []
 
         async def hook_with_app(app: FastAPI):
@@ -155,7 +155,7 @@ class TestHookExecution:
             await registry.run_startup(dummy_app)
 
     async def test_no_abort_continues(self, registry, dummy_app):
-        """abort_on_exception=False 时异常不阻止后续钩子"""
+        """abort_on_exception=False时异常不阻止后续钩子"""
         results = []
 
         async def bad_hook(app):
@@ -178,7 +178,7 @@ class TestHookExecution:
             await registry.run_startup(dummy_app)
 
     async def test_timeout_continues_when_no_abort(self, registry, dummy_app):
-        """超时但 abort_on_exception=False 时，应继续执行后续钩子"""
+        """超时但abort_on_exception=False时，应继续执行后续钩子"""
         results = []
 
         async def slow_hook(app):

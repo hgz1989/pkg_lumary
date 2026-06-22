@@ -1,7 +1,7 @@
 """
 @Author     : zarkhan
 @CreateDate : 2026/5/14
-@Description: Lumary 应用核心类与生命周期管理
+@Description: Lumary应用核心类与生命周期管理
 """
 import sys
 from contextlib import asynccontextmanager, AsyncExitStack
@@ -77,11 +77,11 @@ class Lumary(FastAPI):
             description: 应用描述
             version: 应用版本
             is_sub_app: 是否为子应用
-            enable_cors: 是否启用 CORS 中间件
+            enable_cors: 是否启用CORS中间件
             allow_origins: 允许的源列表
             allow_methods: 允许的方法列表
             allow_headers: 允许的头列表
-            hook_registry: 生命周期钩子注册表，为 None 时使用默认全局注册表
+            hook_registry: 生命周期钩子注册表，为None时使用默认全局注册表
             **kwargs: 其他参数
         """
         # 设置属性
@@ -98,7 +98,7 @@ class Lumary(FastAPI):
             # 清空子应用根路径
             if 'root_path' in kwargs:
                 kwargs.pop('root_path')
-                _logger.debug(f'子应用 [{title}] 的 root_path 已被自动清除')
+                _logger.debug(f'子应用 [{title}] 的root_path已被自动清除')
 
         # 默认中间件
         middlewares = []
@@ -111,7 +111,7 @@ class Lumary(FastAPI):
                 )
             )
 
-            # 添加 CORS 中间件
+            # 添加CORS中间件
             if enable_cors:
                 middlewares.append(
                     Middleware(
@@ -132,7 +132,7 @@ class Lumary(FastAPI):
         # 设置应用生命周期管理
         kwargs.setdefault('lifespan', self._application_lifespan)
         # 在父类初始化前注入异常处理器
-        # middleware stack 采用懒加载模式（首次请求时构建），但通过构造函数参数传入是注入 handler 的标准方式
+        # middleware stack采用懒加载模式（首次请求时构建），但通过构造函数参数传入是注入handler的标准方式
         kwargs.setdefault('exception_handlers', build_exception_handlers())
 
         # 如果非调试模式 → 关闭文档、设置日志级别
@@ -241,11 +241,11 @@ class Lumary(FastAPI):
             if sub_app is None:
                 _logger.warning(
                     f'子应用加载失败：在模块 {module_path} 中未找到变量 {app_name}，'
-                    f'请检查模块配置与 __init__.py 是否正确'
+                    f'请检查模块配置与 __init__.py是否正确'
                 )
             elif not isinstance(sub_app, self.__class__):
                 _logger.warning(
-                    f'子应用类型不匹配：{module_path}.{app_name} 不是合法的 Lumary 应用实例'
+                    f'子应用类型不匹配：{module_path}.{app_name} 不是合法的Lumary应用实例'
                 )
             else:
                 return sub_app
@@ -313,7 +313,7 @@ class Lumary(FastAPI):
         """应用生命周期管理（支持栈式统管所有子应用）
 
         Args:
-            app: FastAPI 应用实例
+            app: FastAPI应用实例
 
         Returns:
             异步生成器
@@ -322,11 +322,11 @@ class Lumary(FastAPI):
             # 1. 优先执行当前应用的生命周期钩子
             await stack.enter_async_context(fastapi_lifespan(app, registry=self._hook_registry))
 
-            # 2. 遍历所有挂载的路由，如果是子应用且有 lifespan_context，则自动入栈执行
+            # 2. 遍历所有挂载的路由，如果是子应用且有lifespan_context，则自动入栈执行
             for route in app.routes:
                 if isinstance(route, Mount):
                     sub_app = route.app
-                    # 检查是否为合法的 FastAPI/Starlette 应用
+                    # 检查是否为合法的FastAPI/Starlette应用
                     if hasattr(sub_app, 'router') and hasattr(sub_app.router, 'lifespan_context'):
                         await stack.enter_async_context(sub_app.router.lifespan_context(sub_app))
 

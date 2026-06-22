@@ -28,7 +28,7 @@ class _NoArgHook(Protocol):
 
 @runtime_checkable
 class _AppArgHook(Protocol):
-    """带 FastAPI 实例参数钉子协议定义"""
+    """带FastAPI实例参数钉子协议定义"""
 
     async def __call__(self, app: FastAPI) -> None: ...
 
@@ -42,8 +42,8 @@ class _HookItem:
     func: HookFunc
     priority: int
     abort_on_exception: bool
-    needs_app: bool  # 是否需要注入 FastAPI 实例（注册时缓存签名结果）
-    timeout: float | None = None  # 单个钉子执行超时（秒），None 表示不限制
+    needs_app: bool  # 是否需要注入FastAPI实例（注册时缓存签名结果）
+    timeout: float | None = None  # 单个钉子执行超时（秒），None表示不限制
 
     def __eq__(self, other: object) -> bool:
         """重写等于判断逻辑，用于去重
@@ -55,7 +55,7 @@ class _HookItem:
             other: 需要比较的另一个对象
 
         Returns:
-            若两个钉子内部包装的是同一个函数，则返回 True
+            若两个钉子内部包装的是同一个函数，则返回True
         """
         if not isinstance(other, _HookItem):
             return False
@@ -63,10 +63,10 @@ class _HookItem:
         return self.func.__name__ == other.func.__name__ and id(self.func) == id(other.func)
 
     def __hash__(self) -> int:
-        """重写哈希逻辑以支持 Set 数据结构的高效排重
+        """重写哈希逻辑以支持Set数据结构的高效排重
 
-        由于重写了 __eq__，dataclass 默认会禁用 __hash__，
-        因此必须手动实现以提供 O(1) 的去重性能
+        由于重写了 __eq__，dataclass默认会禁用 __hash__，
+        因此必须手动实现以提供O(1) 的去重性能
 
         Returns:
             哈希值
@@ -107,14 +107,14 @@ class HookRegistry:
     ) -> None:
         """将启动钉子注册到列表中
 
-        按优先级从大到小降序排列，priority 值越大的函数越先执行
+        按优先级从大到小降序排列，priority值越大的函数越先执行
         注册时自动检测函数签名并缓存结果，避免运行时重复反射
 
         Args:
             func: 待执行的异步函数
             priority: 执行优先级
-            abort_on_exception: 异常时是否抛出 RuntimeError 终止启动
-            timeout: 单个钉子执行超时（秒），None 表示不限制
+            abort_on_exception: 异常时是否抛出RuntimeError终止启动
+            timeout: 单个钉子执行超时（秒），None表示不限制
         """
         needs_app = isinstance(func, _AppArgHook)
         item = _HookItem(func, priority, abort_on_exception, needs_app, timeout)
@@ -138,8 +138,8 @@ class HookRegistry:
         Args:
             func: 待执行的异步函数
             priority: 执行优先级
-            abort_on_exception: 异常时是否抛出 RuntimeError
-            timeout: 单个钉子执行超时（秒），None 表示不限制
+            abort_on_exception: 异常时是否抛出RuntimeError
+            timeout: 单个钉子执行超时（秒），None表示不限制
         """
         needs_app = isinstance(func, _AppArgHook)
         item = _HookItem(func, priority, abort_on_exception, needs_app, timeout)
@@ -152,7 +152,7 @@ class HookRegistry:
         """执行所有启动钉子
 
         Args:
-            app: 当前 FastAPI 应用实例
+            app: 当前FastAPI应用实例
         """
         hooks_count = len(self._startup_hooks)
         if hooks_count > 0:
@@ -164,7 +164,7 @@ class HookRegistry:
         """执行所有关闭钉子
 
         Args:
-            app: 当前 FastAPI 应用实例
+            app: 当前FastAPI应用实例
         """
         hooks_count = len(self._shutdown_hooks)
         if hooks_count > 0:
@@ -176,15 +176,15 @@ class HookRegistry:
     async def _run_hooks(hooks: list[_HookItem], app: FastAPI) -> None:
         """按序执行给定的生命周期钉子列表
 
-        根据注册时缓存的签名结果决定是否注入 FastAPI 应用实例
-        如果钉子设置了 timeout，使用 asyncio.wait_for 强制超时
+        根据注册时缓存的签名结果决定是否注入FastAPI应用实例
+        如果钉子设置了timeout，使用asyncio.wait_for强制超时
 
         Args:
-            hooks: 包含 _HookItem 的列表
-            app: 当前 FastAPI 应用实例
+            hooks: 包含 _HookItem的列表
+            app: 当前FastAPI应用实例
 
         Raises:
-            RuntimeError: 当 abort_on_exception=True 且执行发生异常时抛出
+            RuntimeError: 当abort_on_exception=True且执行发生异常时抛出
         """
         for item in hooks:
             name = item.func.__name__
@@ -268,9 +268,9 @@ class HookRegistry:
         """注册服务启动(Startup)生命周期钉子的装饰器（实例级）
 
         Args:
-            priority: 优先级 (默认 50)。值越大，越早被执行
-            abort_on_exception: 如果执行报错是否抛出异常阻止启动 (默认 True)
-            timeout: 钉子执行超时（秒），None 表示不限制 (默认 None)
+            priority: 优先级 (默认50)。值越大，越早被执行
+            abort_on_exception: 如果执行报错是否抛出异常阻止启动 (默认True)
+            timeout: 钉子执行超时（秒），None表示不限制 (默认None)
 
         Returns:
             挂载的装饰器函数
@@ -289,9 +289,9 @@ class HookRegistry:
 
         Args:
             func: 挂载此装饰器的异步函数
-            priority: 优先级 (默认 50)。值越大，越早被执行
-            abort_on_exception: 如果执行报错是否抛出异常阻止启动 (默认 True)
-            timeout: 钉子执行超时（秒），None 表示不限制 (默认 None)
+            priority: 优先级 (默认50)。值越大，越早被执行
+            abort_on_exception: 如果执行报错是否抛出异常阻止启动 (默认True)
+            timeout: 钉子执行超时（秒），None表示不限制 (默认None)
         """
 
         def decorator(fn: HookFunc) -> HookFunc:
@@ -331,9 +331,9 @@ class HookRegistry:
         """注册服务关闭(Shutdown)生命周期钉子的装饰器（实例级）
 
         Args:
-            priority: 优先级 (默认 50)
-            abort_on_exception: 报错时是否抛出异常 (默认 False)
-            timeout: 钉子执行超时（秒），None 表示不限制 (默认 None)
+            priority: 优先级 (默认50)
+            abort_on_exception: 报错时是否抛出异常 (默认False)
+            timeout: 钉子执行超时（秒），None表示不限制 (默认None)
 
         Returns:
             挂载的装饰器函数
@@ -352,9 +352,9 @@ class HookRegistry:
 
         Args:
             func: 挂载此装饰器的异步函数
-            priority: 优先级 (默认 50)
-            abort_on_exception: 报错时是否抛出异常 (默认 False)
-            timeout: 钉子执行超时（秒），None 表示不限制 (默认 None)
+            priority: 优先级 (默认50)
+            abort_on_exception: 报错时是否抛出异常 (默认False)
+            timeout: 钉子执行超时（秒），None表示不限制 (默认None)
         """
 
         def decorator(fn: HookFunc) -> HookFunc:
@@ -376,17 +376,17 @@ class HookRegistry:
 default_registry = HookRegistry()
 
 
-# FastAPI 生命周期
+# FastAPI生命周期
 @asynccontextmanager
 async def fastapi_lifespan(app: FastAPI, registry: HookRegistry | None = None) -> AsyncGenerator[None, None]:
-    """FastAPI 应用的生命周期管理函数
+    """FastAPI应用的生命周期管理函数
 
     用于处理应用启动前（startup）和关闭后（shutdown）的逻辑，
     例如：数据库连接池的建立与释放、全局资源的初始化与清理等
 
     Args:
-        app: FastAPI 应用实例
-        registry: 钉子注册表，为 None 时使用默认全局注册表
+        app: FastAPI应用实例
+        registry: 钉子注册表，为None时使用默认全局注册表
 
     Returns:
         异步生成器
@@ -421,12 +421,12 @@ def on_startup(
     """注册服务启动(Startup)生命周期钉子的装饰器
 
     允许您将应用启动时的初始化逻辑（如数据库连接、数据预热等）分散到具体的业务模块中
-    在 FastAPI 实例启动之前，会统一收集并按 `priority` 降序执行所有挂载了该装饰器的函数
+    在FastAPI实例启动之前，会统一收集并按 `priority` 降序执行所有挂载了该装饰器的函数
 
     Args:
-        priority: 优先级 (默认 50)。值越大，越早被执行
-        abort_on_exception: 如果执行报错是否抛出异常阻止启动 (默认 True)
-        timeout: 钉子执行超时（秒），None 表示不限制 (默认 None)
+        priority: 优先级 (默认50)。值越大，越早被执行
+        abort_on_exception: 如果执行报错是否抛出异常阻止启动 (默认True)
+        timeout: 钉子执行超时（秒），None表示不限制 (默认None)
 
     Returns:
         挂载的装饰器函数
@@ -443,13 +443,13 @@ def on_startup(
     """注册服务启动(Startup)生命周期钉子的装饰器
 
     允许您将应用启动时的初始化逻辑（如数据库连接、数据预热等）分散到具体的业务模块中
-    在 FastAPI 实例启动之前，会统一收集并按 `priority` 降序执行所有挂载了该装饰器的函数
+    在FastAPI实例启动之前，会统一收集并按 `priority` 降序执行所有挂载了该装饰器的函数
 
     Args:
         func: 挂载此装饰器的异步函数
-        priority: 优先级 (默认 50)。值越大，越早被执行
-        abort_on_exception: 如果执行报错是否抛出异常阻止启动 (默认 True)
-        timeout: 钉子执行超时（秒），None 表示不限制 (默认 None)
+        priority: 优先级 (默认50)。值越大，越早被执行
+        abort_on_exception: 如果执行报错是否抛出异常阻止启动 (默认True)
+        timeout: 钉子执行超时（秒），None表示不限制 (默认None)
 
     Examples:
         @on_startup(priority=100)
@@ -499,9 +499,9 @@ def on_shutdown(
     """注册服务关闭(Shutdown)生命周期钉子的装饰器
 
     Args:
-        priority: 优先级 (默认 50)。启动时优先级越大的，关闭时优先级也应设为越大，它会越晚被清理
-        abort_on_exception: 报错时是否抛出异常 (默认 False。关闭通常不应因局部报错而中断全局清理)
-        timeout: 钉子执行超时（秒），None 表示不限制 (默认 None)
+        priority: 优先级 (默认50)。启动时优先级越大的，关闭时优先级也应设为越大，它会越晚被清理
+        abort_on_exception: 报错时是否抛出异常 (默认False。关闭通常不应因局部报错而中断全局清理)
+        timeout: 钉子执行超时（秒），None表示不限制 (默认None)
 
     Returns:
         挂载的装饰器函数
@@ -519,14 +519,14 @@ def on_shutdown(
     """注册服务关闭(Shutdown)生命周期钉子的装饰器
 
     允许您将应用关闭时的清理逻辑（如释放连接池、刷新日志等）分散到具体的业务模块中
-    在 FastAPI 实例关闭之前，会统一收集并按 `priority` 升序执行所有挂载了该装饰器的函数
+    在FastAPI实例关闭之前，会统一收集并按 `priority` 升序执行所有挂载了该装饰器的函数
     （与启动时的顺序刚好相反，优先清理后初始化的资源）
 
     Args:
         func: 挂载此装饰器的异步函数
-        priority: 优先级 (默认 50)。启动时优先级越大的，关闭时优先级也应设为越大，它会越晚被清理
-        abort_on_exception: 报错时是否抛出异常 (默认 False。关闭通常不应因局部报错而中断全局清理)
-        timeout: 钉子执行超时（秒），None 表示不限制 (默认 None)
+        priority: 优先级 (默认50)。启动时优先级越大的，关闭时优先级也应设为越大，它会越晚被清理
+        abort_on_exception: 报错时是否抛出异常 (默认False。关闭通常不应因局部报错而中断全局清理)
+        timeout: 钉子执行超时（秒），None表示不限制 (默认None)
 
     Examples:
         @on_shutdown

@@ -1,10 +1,13 @@
 """
 @Author     : zarkhan
 @CreateDate : 2026/6/21
-@Description: MQTT 模块测试（包含平滑降级）
+@Description: MQTT模块测试（包含平滑降级）
 """
+import asyncio
+import json
+from unittest.mock import AsyncMock, patch
+
 import pytest
-from unittest.mock import MagicMock
 
 import lumary.common.mqtt as mqtt_module
 from lumary.common.mqtt import MqttManager, topic_matches
@@ -12,7 +15,7 @@ from lumary.common.mqtt import MqttManager, topic_matches
 
 @pytest.fixture
 def mock_missing_aiomqtt():
-    """模拟未安装 aiomqtt 库的环境"""
+    """模拟未安装aiomqtt库的环境"""
     import sys
     mqtt_module = sys.modules['lumary.common.mqtt']
     orig_mqtt_installed = mqtt_module.MQTT_INSTALLED
@@ -32,11 +35,11 @@ def test_topic_matches():
 
 @pytest.mark.asyncio
 async def test_mqtt_manager_missing_dependency_fallback(mock_missing_aiomqtt):
-    """测试未安装 aiomqtt 时，MQTT管理器平滑降级（静默空跑）"""
+    """测试未安装aiomqtt时，MQTT管理器平滑降级（静默空跑）"""
     manager = MqttManager()
     
-    # 未安装时 init 应该抛出 RuntimeError
-    with pytest.raises(RuntimeError, match='未安装 aiomqtt 依赖'):
+    # 未安装时init应该抛出RuntimeError
+    with pytest.raises(RuntimeError, match='未安装aiomqtt依赖'):
         await manager.init('localhost')
         
     assert manager.enabled is False
@@ -52,5 +55,5 @@ async def test_mqtt_manager_missing_dependency_fallback(mock_missing_aiomqtt):
     # 发布消息不应该抛出异常
     await manager.publish('test/topic', {'data': 123})
     
-    # close 不应该抛出异常
+    # close不应该抛出异常
     await manager.close()

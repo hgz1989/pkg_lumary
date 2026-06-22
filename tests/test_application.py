@@ -1,7 +1,7 @@
 """
 @Author     : zarkhan
 @CreateDate : 2026/6/17
-@Description: Lumary 应用核心行为、系统内置接口单元测试
+@Description: Lumary应用核心行为、系统内置接口单元测试
 """
 import pytest
 from fastapi.testclient import TestClient
@@ -11,7 +11,7 @@ from lumary.lifespan import HookRegistry
 
 
 # ──────────────────────────────────────────────
-# 测试用应用实例（debug=True 以暴露文档路由）
+# 测试用应用实例（debug=True以暴露文档路由）
 # ──────────────────────────────────────────────
 @pytest.fixture(scope='module')
 def app():
@@ -44,19 +44,19 @@ class TestLumaryInit:
         assert app._start_time > 0
 
     def test_non_debug_hides_docs(self):
-        """非 debug 模式下文档路由应被禁用"""
+        """非debug模式下文档路由应被禁用"""
         prod_app = Lumary(debug=False)
         assert prod_app.openapi_url is None
         assert prod_app.docs_url is None
 
     def test_custom_hook_registry(self):
-        """可注入独立 HookRegistry"""
+        """可注入独立HookRegistry"""
         registry = HookRegistry()
         custom_app = Lumary(debug=True, hook_registry=registry)
         assert custom_app._hook_registry is registry
 
     def test_sub_app_flag(self):
-        """is_sub_app=True 时不注册 /system 路由"""
+        """is_sub_app=True时不注册 /system路由"""
         sub = Lumary(debug=True, is_sub_app=True)
         paths = [r.path for r in sub.routes if hasattr(r, 'path')]
         assert not any(p.startswith('/system') for p in paths)
@@ -108,13 +108,13 @@ class TestSystemEndpoints:
         assert 'memory_mb' in data
 
     def test_request_id_header_forwarded(self, client):
-        """客户端传入 X-Request-ID 时应原样返回"""
+        """客户端传入X-Request-ID时应原样返回"""
         custom_rid = 'my-custom-request-id'
         headers = client.get('/system/health', headers={'x-request-id': custom_rid}).headers
         assert headers.get('x-request-id') == custom_rid
 
     def test_404_returns_json(self, client):
-        """不存在的路由应返回标准 JSON 格式而非 HTML"""
+        """不存在的路由应返回标准JSON格式而非HTML"""
         resp = client.get('/not_exist')
         assert resp.status_code == 404
         body = resp.json()
@@ -123,7 +123,7 @@ class TestSystemEndpoints:
 
 class TestSubAppMounting:
     def test_mount_sub_apps_missing_dir(self, app):
-        """挂载不存在的子应用目录时应抛出 RuntimeError"""
+        """挂载不存在的子应用目录时应抛出RuntimeError"""
         with pytest.raises(RuntimeError) as exc_info:
             app.mount_sub_apps('not_exist_dir')
         assert '目录 not_exist_dir 不存在' in str(exc_info.value)

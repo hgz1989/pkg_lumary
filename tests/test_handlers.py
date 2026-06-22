@@ -1,7 +1,7 @@
 """
 @Author     : zarkhan
 @CreateDate : 2026/6/17
-@Description: 全局异常处理器集成测试（通过 TestClient 发起真实 HTTP 请求验证响应格式）
+@Description: 全局异常处理器集成测试（通过TestClient发起真实HTTP请求验证响应格式）
 """
 import pytest
 from fastapi import FastAPI, Request
@@ -69,7 +69,7 @@ def client():
 # ──────────────────────────────────────────────
 class TestValidationExceptionHandler:
     def test_missing_field_returns_422(self, client):
-        resp = client.post('/validate', json={'name': 'x'})  # 缺少 value
+        resp = client.post('/validate', json={'name': 'x'})  # 缺少value
         assert resp.status_code == 422
 
     def test_422_body_format(self, client):
@@ -82,7 +82,7 @@ class TestValidationExceptionHandler:
         assert resp.status_code == 422
 
     def test_invalid_json_returns_400(self, client):
-        """Content-Type: application/json 但 body 无效 → 400"""
+        """Content-Type: application/json但body无效 → 400"""
         resp = client.post(
             '/validate',
             content=b'{invalid json}',
@@ -93,7 +93,7 @@ class TestValidationExceptionHandler:
 
 
 # ──────────────────────────────────────────────
-# HTTP 协议异常 → 对应状态码
+# HTTP协议异常 → 对应状态码
 # ──────────────────────────────────────────────
 class TestHttpExceptionHandler:
     def test_400_status_code(self, client):
@@ -121,7 +121,7 @@ class TestHttpExceptionHandler:
         assert 'not found detail' in body['message']
 
     def test_framework_404(self, client):
-        """框架自动抛出的 404 也应返回标准格式"""
+        """框架自动抛出的404也应返回标准格式"""
         body = client.get('/totally_nonexistent').json()
         assert 'code' in body
         assert 'message' in body

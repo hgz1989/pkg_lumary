@@ -1,7 +1,7 @@
 """
 @Author     : zarkhan
 @CreateDate : 2026/6/17
-@Description: CRUDBase 全方法集成测试（in-memory SQLite + aiosqlite）
+@Description: CRUDBase全方法集成测试（in-memory SQLite + aiosqlite）
 """
 import pytest
 from pydantic import BaseModel
@@ -18,7 +18,7 @@ from lumary.common.mixins.sqlalchemy import SoftDeleteMixin
 
 
 # ──────────────────────────────────────────────
-# 测试用模型与 Schema（普通模型）
+# 测试用模型与Schema（普通模型）
 # ──────────────────────────────────────────────
 class _UserModel(ModelBase):
     __tablename__ = 'test_user'
@@ -106,9 +106,9 @@ class TestCRUDInit:
 
     def test_no_model_raises(self, session):
         class _BadCRUD(CRUDBase):
-            pass  # 没有 model
+            pass  # 没有model
 
-        with pytest.raises(RuntimeError, match='必须显式定义 model 属性'):
+        with pytest.raises(RuntimeError, match='必须显式定义model属性'):
             _BadCRUD(db=session)
 
 
@@ -133,7 +133,7 @@ class TestCreate:
         assert obj.name == 'Eve'
 
     async def test_create_with_extra_fields(self, user_crud):
-        """测试 Schema 中包含 ORM 没有的额外字段，应被静默过滤"""
+        """测试Schema中包含ORM没有的额外字段，应被静默过滤"""
         obj_in = _UserCreate(name='Alice_Extra', age=25, extra_field='ignore_me')
         obj = await user_crud.create(obj_in=obj_in)
         assert obj.name == 'Alice_Extra'
@@ -152,7 +152,7 @@ class TestCreate:
         assert created_objs[2].name == 'BatchDict'
 
     async def test_batch_create_ignore_errors(self, user_crud):
-        """测试批量创建忽略错误（SQLite in-memory 对唯一约束支持有限，这里测试基本逻辑执行成功）"""
+        """测试批量创建忽略错误（SQLite in-memory对唯一约束支持有限，这里测试基本逻辑执行成功）"""
         objs_in = [
             _UserCreate(name='BatchErr1', age=1),
             _UserCreate(name='BatchErr2', age=2),
@@ -176,10 +176,10 @@ class TestBatchCreate:
         assert len(objs) == 2
 
     async def test_batch_create_no_return_objects(self, user_crud):
-        """return_objs=False 也应返回实例列表"""
+        """return_objs=False应返回空列表"""
         items = [_UserCreate(name='NR1', age=10)]
         objs = await user_crud.batch_create(objs_in=items, return_objs=False)
-        assert len(objs) == 1
+        assert len(objs) == 0
 
 
 # ──────────────────────────────────────────────
@@ -197,10 +197,10 @@ class TestGet:
         assert result is None
 
     async def test_get_with_options(self, user_crud):
-        """测试带 options 查询不报错"""
+        """测试带options查询不报错"""
         from sqlalchemy.orm import undefer
         obj = await user_crud.create(obj_in=_UserCreate(name='GetOpt', age=1))
-        # sqlite 没啥好 join 的，随便传个 undefer 验证不报错
+        # sqlite没啥好join的，随便传个undefer验证不报错
         found = await user_crud.get(obj_id=obj.id, options=[undefer(_UserModel.name)])
         assert found is not None
         assert found.name == 'GetOpt'
@@ -298,6 +298,28 @@ class TestGetPage:
         page = await user_crud.get_page(page=1, size=2)
         assert page.pages >= 2
 
+    async def test_get_page(self, user_crud):
+        """测试自动分页方法get_page"""
+        # 清空环境数据或使用特定的特征标识
+        await user_crud.create(obj_in=_UserCreate(name='Page1', age=100))
+        await user_crud.create(obj_in=_UserCreate(name='Page2', age=100))
+        await user_crud.create(obj_in=_UserCreate(name='Page3', age=100))
+        
+        # 请求第一页，每页2条
+        page_data = await user_crud.get_page(age=100, page=1, size=2)
+        assert page_data.total == 3
+        assert page_data.pages == 2
+        assert len(page_data.items) == 2
+        
+        # 请求第二页，每页2条
+        page_data_2 = await user_crud.get_page(age=100, page=2, size=2)
+        assert len(page_data_2.items) == 1
+        
+        # 请求没有数据的一页
+        page_data_empty = await user_crud.get_page(age=999, page=1, size=10)
+        assert page_data_empty.total == 0
+        assert len(page_data_empty.items) == 0
+
 
 # ──────────────────────────────────────────────
 # Update
@@ -317,7 +339,7 @@ class TestUpdate:
         assert changed is True
 
     async def test_update_with_extra_fields(self, user_crud):
-        """测试 Update Schema 中有多余字段"""
+        """测试Update Schema中有多余字段"""
         obj = await user_crud.create(obj_in=_UserCreate(name='Extra', age=20))
         updated, changed = await user_crud.update(db_obj_in=obj, obj_in={'name': 'Extra2', 'extra_field': 'hello'})
         assert updated.name == 'Extra2'
@@ -325,7 +347,7 @@ class TestUpdate:
         assert changed is True
 
     async def test_update_ignores_invalid_fields(self, user_crud):
-        """字典中不在 valid_columns 的字段应被过滤"""
+        """字典中不在valid_columns的字段应被过滤"""
         obj = await user_crud.create(obj_in=_UserCreate(name='FilterOld', age=3))
         updated, changed = await user_crud.update(db_obj_in=obj, obj_in={'name': 'FilterNew', 'bad_col': 'x'})
         assert updated.name == 'FilterNew'
@@ -395,7 +417,7 @@ class TestSoftDelete:
         assert restored.deleted_at is None
 
     async def test_soft_delete_on_non_soft_model_raises(self, user_crud):
-        """普通模型（无 SoftDeleteMixin）调用软删除应抛出 ConflictError"""
+        """普通模型（无SoftDeleteMixin）调用软删除应抛出ConflictError"""
         obj = await user_crud.create(obj_in=_UserCreate(name='NonSoft', age=1))
         with pytest.raises(ConflictError, match='不支持软删除'):
             await user_crud.soft_delete(obj_id=obj.id)
@@ -417,7 +439,7 @@ class TestSoftDelete:
         obj = await post_crud.create(obj_in=_PostCreate(title='ToRestore'))
         await post_crud.soft_delete(obj_id=obj.id)
 
-        # 已软删除，正常 get 查不到
+        # 已软删除，正常get查不到
         result = await post_crud.get(obj.id)
         assert result is None
 
@@ -426,7 +448,7 @@ class TestSoftDelete:
         assert restored_obj.is_deleted is False
         assert restored_obj.deleted_at is None
 
-        # 恢复后可以 get 到
+        # 恢复后可以get到
         found = await post_crud.get(obj.id)
         assert found.id == obj.id
 

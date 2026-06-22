@@ -1,7 +1,7 @@
 """
 @Author     : zarkhan
 @CreateDate : 2026/6/17
-@Description: 业务异常类单元测试，覆盖所有预定义异常的 status_code / detail 默认值及自定义值
+@Description: 业务异常类单元测试，覆盖所有预定义异常的status_code / detail默认值及自定义值
 """
 import pytest
 from starlette import status
@@ -26,7 +26,7 @@ from lumary.exceptions import (
 
 
 # ──────────────────────────────────────────────
-# 参数化测试：(异常类, 期望状态码, 期望默认 detail)
+# 参数化测试：(异常类, 期望状态码, 期望默认detail)
 # ──────────────────────────────────────────────
 _DEFAULT_CASES = [
     (BadRequestError,          status.HTTP_400_BAD_REQUEST,          'Bad request'),

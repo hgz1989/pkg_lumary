@@ -12,20 +12,20 @@ from pathlib import Path
 from .context import get_request_id
 
 # -------------------------------------
-# 全局注入 request_id 到日志记录
+# 全局注入request_id到日志记录
 # -------------------------------------
 old_factory = logging.getLogRecordFactory()
 
 
 def _record_factory(*args, **kwargs) -> logging.LogRecord:
-    """自定义日志记录工厂，在每条日志记录上注入当前请求的 request_id
+    """自定义日志记录工厂，在每条日志记录上注入当前请求的request_id
 
     Args:
         *args: 传递给原始工厂的位置参数
         **kwargs: 传递给原始工厂的关键字参数
 
     Returns:
-        注入了 request_id 属性的日志记录对象
+        注入了request_id属性的日志记录对象
     """
     record = old_factory(*args, **kwargs)
     record.request_id = get_request_id() or '-'
@@ -39,32 +39,32 @@ logging.setLogRecordFactory(_record_factory)
 # 日志接管
 # -------------------------------------
 class UvicornNameRewriteFilter(logging.Filter):
-    """日志过滤器，统一 uvicorn.error / uvicorn.access 的名称为 uvicorn"""
+    """日志过滤器，统一uvicorn.error / uvicorn.access的名称为uvicorn"""
 
     def filter(self, record: logging.LogRecord) -> bool:
-        """将 uvicorn.error / uvicorn.access 的日志名称统一重写为 uvicorn
+        """将uvicorn.error / uvicorn.access的日志名称统一重写为uvicorn
 
         Args:
             record: 当前日志记录对象
 
         Returns:
-            始终返回 True，确保日志记录正常输出
+            始终返回True，确保日志记录正常输出
         """
-        # 把 uvicorn.error / uvicorn.access 的日志名称统一改成 uvicorn
+        # 把uvicorn.error / uvicorn.access的日志名称统一改成uvicorn
         if record.name in ('uvicorn.error', 'uvicorn.access'):
             record.name = 'uvicorn'
         return True
 
 
-# 强制接管 uvicorn 的所有日志（核心！）
+# 强制接管uvicorn的所有日志（核心！）
 only_takeover = ['uvicorn', 'uvicorn.access', 'uvicorn.error', 'fastapi']
 
 for logger_name in only_takeover:
     logger = logging.getLogger(logger_name)
     logger.handlers.clear()  # 清空默认处理器
     logger.propagate = True  # 让它走根日志
-    logger.setLevel(logging.INFO)  # 屏蔽外部库的 DEBUG 日志，最低只输出 INFO
-    # 给 error / access 附加名称重写过滤器
+    logger.setLevel(logging.INFO)  # 屏蔽外部库的DEBUG日志，最低只输出INFO
+    # 给error / access附加名称重写过滤器
     if logger_name in ('uvicorn.error', 'uvicorn.access'):
         logger.addFilter(UvicornNameRewriteFilter())
 
@@ -77,7 +77,7 @@ logging.getLogger('urllib3').setLevel(logging.WARNING)
 # 文件轮转
 # -------------------------------------
 class _MonthlyRotatingFileHandler(TimedRotatingFileHandler):
-    """按月轮转的日志处理器，以每月 1 日 00:00:00 为节点"""
+    """按月轮转的日志处理器，以每月1日00:00:00为节点"""
 
     def __init__(self, filename: str, backup_count: int = 12, encoding: str = 'utf-8'):
         """初始化按月轮转处理器
@@ -87,17 +87,17 @@ class _MonthlyRotatingFileHandler(TimedRotatingFileHandler):
             backup_count: 保留的日志文件数量
             encoding: 文件编码
         """
-        # 使用 'midnight' 作为基础，后续重写 computeRollover 实现按月整点
+        # 使用 'midnight' 作为基础，后续重写computeRollover实现按月整点
         super().__init__(filename, when='midnight', backupCount=backup_count, encoding=encoding)
 
     def computeRollover(self, current_time: float) -> float:
-        """计算下次轮转时间（下月 1 日 00:00:00）
+        """计算下次轮转时间（下月1日00:00:00）
 
         Args:
-            current_time: 当前 UNIX 时间戳
+            current_time: 当前UNIX时间戳
 
         Returns:
-            下次轮转的 UNIX 时间戳
+            下次轮转的UNIX时间戳
         """
         dt = datetime.fromtimestamp(current_time)
         # 下月第一天的零点
@@ -109,7 +109,7 @@ class _MonthlyRotatingFileHandler(TimedRotatingFileHandler):
 
 
 class _YearlyRotatingFileHandler(TimedRotatingFileHandler):
-    """按年轮转的日志处理器，以每年 1 月 1 日 00:00:00 为节点"""
+    """按年轮转的日志处理器，以每年1月1日00:00:00为节点"""
 
     def __init__(self, filename: str, backup_count: int = 5, encoding: str = 'utf-8'):
         """初始化按年轮转处理器
@@ -122,26 +122,26 @@ class _YearlyRotatingFileHandler(TimedRotatingFileHandler):
         super().__init__(filename, when='midnight', backupCount=backup_count, encoding=encoding)
 
     def computeRollover(self, current_time: float) -> float:
-        """计算下次轮转时间（下一年 1 月 1 日 00:00:00）
+        """计算下次轮转时间（下一年1月1日00:00:00）
 
         Args:
-            current_time: 当前 UNIX 时间戳
+            current_time: 当前UNIX时间戳
 
         Returns:
-            下次轮转的 UNIX 时间戳
+            下次轮转的UNIX时间戳
         """
         dt = datetime.fromtimestamp(current_time)
         next_year = datetime(dt.year + 1, 1, 1)
         return next_year.timestamp()
 
 
-# 轮转周期映射：用户传入的语义字符串 → (when, interval) 或自定义 Handler
+# 轮转周期映射：用户传入的语义字符串 → (when, interval) 或自定义Handler
 _ROTATION_MAP: dict[str, tuple[str, int] | None] = {
     'second': ('S', 1),
     'minute': ('M', 1),
     'hour': ('H', 1),
     'day': ('midnight', 1),
-    'week': ('W0', 1),  # 每周一 00:00 轮转
+    'week': ('W0', 1),  # 每周一00:00轮转
     'month': None,  # 自定义处理器
     'year': None,  # 自定义处理器
 }
@@ -153,12 +153,12 @@ logging.basicConfig(level=logging.DEBUG, format=NORMAL_FORMAT, force=True)
 
 # 方法1：动态修改全局日志级别
 def set_log_level(level: str | int) -> None:
-    """修改全局日志级别（包括 FastAPI/Uvicorn 所有日志）
+    """修改全局日志级别（包括FastAPI/Uvicorn所有日志）
 
     Args:
-        level: 支持传入 'debug' / 'info' / 'warn' / 'error' 或 logging.DEBUG 等
+        level: 支持传入 'debug' / 'info' / 'warn' / 'error' 或logging.DEBUG等
     """
-    # 字符串转 logging 级别
+    # 字符串转logging级别
     if isinstance(level, str):
         level = level.upper()
         level = getattr(logging, level, logging.INFO)
@@ -198,10 +198,10 @@ def setup_logger(
     - ``'second'``  — 每整秒
     - ``'minute'``  — 每整分钟（:00秒）
     - ``'hour'``    — 每整点小时（:00分）
-    - ``'day'``     — 每天 00:00（默认）
-    - ``'week'``    — 每周一 00:00
-    - ``'month'``   — 每月 1 日 00:00
-    - ``'year'``    — 每年 1 月 1 日 00:00
+    - ``'day'``     — 每天00:00（默认）
+    - ``'week'``    — 每周一00:00
+    - ``'month'``   — 每月1日00:00
+    - ``'year'``    — 每年1月1日00:00
 
     Args:
         log_dir: 日志保存目录，若不提供则不开启文件日志
@@ -213,7 +213,7 @@ def setup_logger(
     """
     root_logger = logging.getLogger()
 
-    # 1. 尝试获取现有的 formatter
+    # 1. 尝试获取现有的formatter
     current_formatter = None
     for h in root_logger.handlers:
         if h.formatter:
@@ -224,7 +224,7 @@ def setup_logger(
 
     # 2. 控制台输出处理
     if enable_console:
-        # 检查是否已有非文件的 StreamHandler
+        # 检查是否已有非文件的StreamHandler
         has_console = any(
             isinstance(h, logging.StreamHandler) and not isinstance(h, logging.FileHandler)
             for h in root_logger.handlers
@@ -234,7 +234,7 @@ def setup_logger(
             console_handler.setFormatter(current_formatter)
             root_logger.addHandler(console_handler)
     else:
-        # 移除所有非文件的 StreamHandler
+        # 移除所有非文件的StreamHandler
         handlers_to_remove = [
             h
             for h in root_logger.handlers
@@ -249,7 +249,7 @@ def setup_logger(
         log_dir.mkdir(parents=True, exist_ok=True)
         file_path = log_dir / filename
 
-        # 检查是否已有相同路径的 FileHandler
+        # 检查是否已有相同路径的FileHandler
         has_file_handler = any(
             isinstance(h, logging.FileHandler) and getattr(h, 'baseFilename', '') == str(file_path.absolute())
             for h in root_logger.handlers

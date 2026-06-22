@@ -1,7 +1,7 @@
 """
 @Author     : zarkhan
 @CreateDate : 2026/6/17
-@Description: request_id 上下文变量（context.py）单元测试
+@Description: request_id上下文变量（context.py）单元测试
 """
 import asyncio
 import pytest
@@ -24,7 +24,7 @@ class TestGenerateRequestId:
 
     def test_returns_valid_uuid4(self):
         rid = generate_request_id()
-        assert self._UUID4_RE.match(rid), f'不是合法 UUID4: {rid}'
+        assert self._UUID4_RE.match(rid), f'不是合法UUID4: {rid}'
 
     def test_each_call_unique(self):
         ids = {generate_request_id() for _ in range(50)}
@@ -33,8 +33,8 @@ class TestGenerateRequestId:
 
 class TestSetGetRequestId:
     def test_get_default_is_none(self):
-        """未设置时默认返回 None"""
-        # 用新的 ContextVar 隔离验证
+        """未设置时默认返回None"""
+        # 用新的ContextVar隔离验证
         from contextvars import ContextVar
         fresh = ContextVar('test_fresh', default=None)
         assert fresh.get() is None
@@ -44,7 +44,7 @@ class TestSetGetRequestId:
         assert get_request_id() == 'test-id-abc'
 
     def test_set_returns_token(self):
-        """set_request_id 应返回 ContextVar Token"""
+        """set_request_id应返回ContextVar Token"""
         from contextvars import Token
         token = set_request_id('token-test')
         assert isinstance(token, Token)
@@ -55,7 +55,7 @@ class TestSetGetRequestId:
         assert get_request_id() == 'second'
 
     def test_reset_via_token(self):
-        """通过 Token.reset 可恢复之前的值"""
+        """通过Token.reset可恢复之前的值"""
         set_request_id('original')
         token = set_request_id('temporary')
         assert get_request_id() == 'temporary'
@@ -65,7 +65,7 @@ class TestSetGetRequestId:
 
 class TestContextVarIsolation:
     async def test_different_coroutines_have_independent_context(self):
-        """不同协程上下文之间的 request_id 应相互隔离"""
+        """不同协程上下文之间的request_id应相互隔离"""
         results = {}
 
         async def worker(name: str, rid: str):
@@ -81,7 +81,7 @@ class TestContextVarIsolation:
         assert results['b'] == 'rid-for-b'
 
     async def test_task_inherits_context_snapshot(self):
-        """asyncio.create_task 时协程会拷贝当前上下文快照"""
+        """asyncio.create_task时协程会拷贝当前上下文快照"""
         set_request_id('parent-rid')
         captured = []
 
@@ -90,5 +90,5 @@ class TestContextVarIsolation:
 
         task = asyncio.create_task(child())
         await task
-        # child 任务在创建时拷贝了 parent 的上下文
+        # child任务在创建时拷贝了parent的上下文
         assert captured == ['parent-rid']

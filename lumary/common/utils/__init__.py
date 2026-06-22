@@ -1,9 +1,8 @@
 """
 @Author     : zarkhan
 @CreateDate : 2026/6/12
-@Description: Lumary 模块
+@Description: Lumary模块
 """
-
 from .datetimekit import add_datetime
 from .strings import (
     camel_to_snake,

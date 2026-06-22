@@ -1,7 +1,7 @@
 """
 @Author     : zarkhan
 @CreateDate : 2026/5/14
-@Description: SQLAlchemy ORM 基础模型
+@Description: SQLAlchemy ORM基础模型
 """
 from datetime import datetime
 
@@ -14,7 +14,7 @@ from .base import Base
 
 
 class ModelBase(Base):
-    """SQLAlchemy 模型基础类
+    """SQLAlchemy模型基础类
 
     提供通用的主键、创建时间和更新时间字段
     """

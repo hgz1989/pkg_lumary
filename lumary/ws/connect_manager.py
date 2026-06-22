@@ -1,8 +1,9 @@
 """
 @Author     : zarkhan
 @CreateDate : 2026/5/14
-@Description: WebSocket 连接管理器
+@Description: WebSocket连接管理器
 """
+import asyncio
 import time
 from asyncio import gather
 from collections.abc import AsyncGenerator
@@ -13,20 +14,36 @@ from uuid import uuid4
 
 from fastapi import WebSocket
 
+from lumary.common.utils.strings import json_loads, json_dumps
+
+try:
+    import redis.asyncio as aioredis
+    from redis.asyncio import Redis
+
+    REDIS_INSTALLED = True
+except ImportError:
+    REDIS_INSTALLED = False
+    aioredis = Any  # type: ignore
+
+    class Redis:  # type: ignore
+        async def close(self) -> None: ...
+        async def publish(self, channel: str, message: str) -> Any: ...
+        def pubsub(self) -> Any: ...
+
 _logger = getLogger(__name__)
 
 
-# WebSocket 连接管理器
+# WebSocket连接管理器
 class WSConnectionManager:
-    """WebSocket 连接管理器
+    """WebSocket连接管理器
 
-    管理所有活跃的 WebSocket 连接，支持按分组进行连接隔离和消息推送
+    管理所有活跃的WebSocket连接，支持按分组进行连接隔离和消息推送
     提供连接注册、注销、单播、广播、分组管理等能力
 
     设计约束：
-        本管理器面向单事件循环（即典型 FastAPI/uvicorn 部署模型），
-        不需要 asyncio.Lock，因为协程之间不存在抢占式中断，
-        dict/set 的读写在 CPython 中本身是原子的
+        本管理器面向单事件循环（即典型FastAPI/uvicorn部署模型），
+        不需要asyncio.Lock，因为协程之间不存在抢占式中断，
+        dict/set的读写在CPython中本身是原子的
 
     Examples:
         manager = WSConnectionManager()
@@ -51,7 +68,10 @@ class WSConnectionManager:
                     await manager.broadcast_json(data, group='chat', exclude={cid})
     """
 
-    __slots__ = ('_connections', '_groups', '_metadata', '_last_seen')
+    __slots__ = (
+        '_connections', '_groups', '_metadata', '_last_seen', 
+        '_redis', '_pubsub', '_listen_task', '_instance_id', '_redis_channel'
+    )
 
     def __init__(self):
         """初始化"""
@@ -59,13 +79,88 @@ class WSConnectionManager:
         self._groups: dict[str, set[str]] = {}
         self._metadata: dict[str, dict[str, Any]] = {}   # 连接元数据
         self._last_seen: dict[str, float] = {}            # 最近心跳时间戳
+        
+        # Redis Pub/Sub相关
+        self._redis: Redis | None = None
+        self._pubsub: Any = None
+        self._listen_task: asyncio.Task | None = None
+        self._instance_id: str = str(uuid4())
+        self._redis_channel: str = 'lumary_ws_broadcast'
 
-    async def connect(self, websocket: WebSocket, *, connection_id: str | None = None, group: str | None = None, metadata: dict[str, Any] | None = None) -> str:
-        """接受并存储新的 WebSocket 连接
+    async def init_redis(self, url: str, channel: str = 'lumary_ws_broadcast') -> None:
+        """初始化Redis并启动订阅监听（支持跨实例广播）
 
         Args:
-            websocket: FastAPI WebSocket 实例
-            connection_id: 自定义连接ID（如 user_id），不传则自动生成 UUID
+            url: Redis连接URL
+            channel: 广播通道名称
+        """
+        if not REDIS_INSTALLED:
+            raise RuntimeError('未安装redis依赖，无法启动分布式WebSocket广播！请使用pip install lumary[redis] 安装')
+
+        self._redis_channel = channel
+        self._redis = aioredis.from_url(url, decode_responses=True)
+        self._pubsub = self._redis.pubsub()
+        await self._pubsub.subscribe(self._redis_channel)
+        
+        self._listen_task = asyncio.create_task(self._listen_redis())
+        _logger.info(f'WebSocket Redis分布式广播已启用，监听通道: {self._redis_channel}')
+
+    async def close_redis(self) -> None:
+        """关闭Redis连接及监听任务"""
+        if self._listen_task and not self._listen_task.done():
+            self._listen_task.cancel()
+            
+        if self._pubsub:
+            await self._pubsub.unsubscribe(self._redis_channel)
+            await self._pubsub.close()
+            
+        if self._redis:
+            await self._redis.close()
+            
+        _logger.info('WebSocket Redis分布式广播已关闭')
+
+    async def _listen_redis(self) -> None:
+        """后台协程：监听Redis订阅消息并分发给本地连接"""
+        if not self._pubsub:
+            return
+            
+        try:
+            async for message in self._pubsub.listen():
+                if message['type'] != 'message':
+                    continue
+                    
+                data_str = message['data']
+                try:
+                    payload = json_loads(data_str)
+                    sender_id = payload.get('sender_id')
+                    
+                    # 忽略自己发出的广播消息
+                    if sender_id == self._instance_id:
+                        continue
+                        
+                    msg_type = payload.get('type')
+                    content = payload.get('content')
+                    group = payload.get('group')
+                    exclude = set(payload.get('exclude') or [])
+                    
+                    if msg_type == 'text':
+                        await self._local_broadcast_text(content, group=group, exclude=exclude)
+                    elif msg_type == 'json':
+                        await self._local_broadcast_json(content, group=group, exclude=exclude)
+                        
+                except Exception as e:
+                    _logger.error(f'处理Redis订阅消息失败: {e}')
+        except asyncio.CancelledError:
+            pass
+        except Exception as e:
+            _logger.error(f'Redis订阅监听异常: {e}')
+
+    async def connect(self, websocket: WebSocket, *, connection_id: str | None = None, group: str | None = None, metadata: dict[str, Any] | None = None) -> str:
+        """接受并存储新的WebSocket连接
+
+        Args:
+            websocket: FastAPI WebSocket实例
+            connection_id: 自定义连接ID（如user_id），不传则自动生成UUID
             group: 分组名称，加入后可按组广播
             metadata: 连接附带元数据，如用户名、角色、自定义标签等
 
@@ -82,13 +177,13 @@ class WSConnectionManager:
         if group:
             self._groups.setdefault(group, set()).add(cid)
 
-        _logger.info(f'WebSocket 已连接：{cid}' + (f' [分组：{group}]' if group else ''))
+        _logger.info(f'WebSocket已连接：{cid}' + (f' [分组：{group}]' if group else ''))
         return cid
 
     async def disconnect(self, connection_id: str) -> None:
         """断开并移除指定连接
 
-        自动从所有分组中移除该连接，并关闭 WebSocket
+        自动从所有分组中移除该连接，并关闭WebSocket
         若连接已不存在或已关闭，则安全跳过
 
         Args:
@@ -113,9 +208,9 @@ class WSConnectionManager:
         try:
             await ws.close()
         except Exception as e:
-            _logger.warning(f'关闭 WebSocket 失败：{connection_id}，异常信息：{str(e)}')
+            _logger.warning(f'关闭WebSocket失败：{connection_id}，异常信息：{str(e)}')
 
-        _logger.info(f'WebSocket 已断开：{connection_id}')
+        _logger.info(f'WebSocket已断开：{connection_id}')
 
     @asynccontextmanager
     async def lifespan(
@@ -126,8 +221,8 @@ class WSConnectionManager:
         自动处理连接的注册与注销，确保即使发生异常也能正确清理资源
 
         Args:
-            websocket: FastAPI WebSocket 实例
-            connection_id: 自定义连接ID，不传则自动生成 UUID
+            websocket: FastAPI WebSocket实例
+            connection_id: 自定义连接ID，不传则自动生成UUID
             group: 分组名称
             metadata: 连接附带元数据
 
@@ -199,44 +294,82 @@ class WSConnectionManager:
             _logger.error(f'向 {connection_id} 发送文本失败：{e}')
 
     async def send_json(self, connection_id: str, data: Any) -> None:
-        """向指定连接发送 JSON 数据
+        """向指定连接发送JSON数据
 
         Args:
             connection_id: 连接ID
-            data: 可序列化为 JSON 的数据
+            data: 可序列化为JSON的数据
         """
         ws = self._connections.get(connection_id)
         if ws is None:
-            _logger.warning(f'无法发送 JSON：连接 {connection_id} 不存在')
+            _logger.warning(f'无法发送JSON：连接 {connection_id} 不存在')
             return
         try:
             await ws.send_json(data)
         except Exception as e:
-            _logger.error(f'向 {connection_id} 发送 JSON 失败：{e}')
+            _logger.error(f'向 {connection_id} 发送JSON失败：{e}')
 
     # 广播
     async def broadcast_text(self, message: str, *, group: str | None = None, exclude: set[str] | None = None) -> None:
-        """广播文本消息
+        """广播文本消息（如果有Redis则跨实例广播，否则仅本地广播）
 
         Args:
             message: 文本消息
             group: 指定分组则只向该组广播，否则向所有连接广播
             exclude: 需要排除的连接ID集合
         """
+        # 1. 本地广播
+        await self._local_broadcast_text(message, group=group, exclude=exclude)
+        
+        # 2. Redis跨实例广播
+        if self._redis:
+            payload = {
+                'sender_id': self._instance_id,
+                'type': 'text',
+                'content': message,
+                'group': group,
+                'exclude': list(exclude) if exclude else []
+            }
+            try:
+                await self._redis.publish(self._redis_channel, json_dumps(payload))
+            except Exception as e:
+                _logger.error(f'Redis发布文本广播失败: {e}')
+
+    async def broadcast_json(self, data: Any, *, group: str | None = None, exclude: set[str] | None = None) -> None:
+        """广播JSON数据（如果有Redis则跨实例广播，否则仅本地广播）
+
+        Args:
+            data: 可序列化为JSON的数据
+            group: 指定分组则只向该组广播，否则向所有连接广播
+            exclude: 需要排除的连接ID集合
+        """
+        # 1. 本地广播
+        await self._local_broadcast_json(data, group=group, exclude=exclude)
+        
+        # 2. Redis跨实例广播
+        if self._redis:
+            payload = {
+                'sender_id': self._instance_id,
+                'type': 'json',
+                'content': data,
+                'group': group,
+                'exclude': list(exclude) if exclude else []
+            }
+            try:
+                await self._redis.publish(self._redis_channel, json_dumps(payload))
+            except Exception as e:
+                _logger.error(f'Redis发布JSON广播失败: {e}')
+
+    async def _local_broadcast_text(self, message: str, *, group: str | None = None, exclude: set[str] | None = None) -> None:
+        """仅执行本地文本广播"""
         targets = self._resolve_targets(group, exclude)
         if not targets:
             return
 
         await gather(*[self.send_text(cid, message) for cid in targets])
 
-    async def broadcast_json(self, data: Any, *, group: str | None = None, exclude: set[str] | None = None) -> None:
-        """广播 JSON 数据
-
-        Args:
-            data: 可序列化为 JSON 的数据
-            group: 指定分组则只向该组广播，否则向所有连接广播
-            exclude: 需要排除的连接ID集合
-        """
+    async def _local_broadcast_json(self, data: Any, *, group: str | None = None, exclude: set[str] | None = None) -> None:
+        """仅执行本地JSON广播"""
         targets = self._resolve_targets(group, exclude)
         if not targets:
             return
@@ -253,7 +386,7 @@ class WSConnectionManager:
             default: 不存在时的默认值
 
         Returns:
-            元数据字段值，连接不存在或字段不存在时返回 default
+            元数据字段值，连接不存在或字段不存在时返回default
         """
         return self._metadata.get(connection_id, {}).get(key, default)
 
@@ -293,7 +426,7 @@ class WSConnectionManager:
             connection_id: 连接ID
 
         Returns:
-            True 表示发送成功，False 表示连接不存在或发送失败
+            True表示发送成功，False表示连接不存在或发送失败
         """
         ws = self._connections.get(connection_id)
         if ws is None:
@@ -303,7 +436,7 @@ class WSConnectionManager:
             self._last_seen[connection_id] = time.monotonic()
             return True
         except Exception as e:
-            _logger.warning(f'WebSocket 心跳失败：{connection_id}，{e}')
+            _logger.warning(f'WebSocket心跳失败：{connection_id}，{e}')
             return False
 
     def update_heartbeat(self, connection_id: str) -> None:
@@ -337,7 +470,7 @@ class WSConnectionManager:
         """解析广播目标连接集合
 
         Args:
-            group: 分组名称，None 表示全部
+            group: 分组名称，None表示全部
             exclude: 需要排除的连接ID集合
 
         Returns:
@@ -394,7 +527,7 @@ class WSConnectionManager:
             connection_id: 连接ID
 
         Returns:
-            若连接已注册则返回 True
+            若连接已注册则返回True
         """
         return connection_id in self._connections
 

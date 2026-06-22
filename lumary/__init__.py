@@ -1,7 +1,7 @@
 """
 @Author     : zarkhan
 @CreateDate : 2026/5/14
-@Description: Lumary 模块
+@Description: Lumary模块
 """
 from fastapi import (
     FastAPI,
@@ -86,7 +86,7 @@ __all__ = [
     # 核心
     'Lumary',
     '__version__',
-    # FastAPI 常用对象
+    # FastAPI常用对象
     'FastAPI',
     'APIRouter',
     'Depends',
@@ -105,14 +105,14 @@ __all__ = [
     'status',
     'WebSocket',
     'WebSocketDisconnect',
-    # FastAPI 常用响应类与工具
+    # FastAPI常用响应类与工具
     'JSONResponse',
     'HTMLResponse',
     'StreamingResponse',
     'RedirectResponse',
     'FileResponse',
     'jsonable_encoder',
-    # Pydantic 常用对象
+    # Pydantic常用对象
     'BaseModel',
     'Field',
     'ConfigDict',

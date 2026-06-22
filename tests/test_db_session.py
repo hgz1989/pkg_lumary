@@ -1,7 +1,7 @@
 """
 @Author     : zarkhan
 @CreateDate : 2026/6/17
-@Description: SessionFactory 会话管理单元测试（使用 in-memory SQLite）
+@Description: SessionFactory会话管理单元测试（使用in-memory SQLite）
 """
 import pytest
 from sqlalchemy import text
@@ -35,7 +35,7 @@ class TestSessionFactoryInit:
 
 
 # ──────────────────────────────────────────────
-# get_session 上下文管理器
+# get_session上下文管理器
 # ──────────────────────────────────────────────
 class TestGetSession:
     async def test_yields_async_session(self, factory):
@@ -43,7 +43,7 @@ class TestGetSession:
             assert isinstance(session, AsyncSession)
 
     async def test_session_executes_sql(self, factory):
-        """能执行 SQL 语句"""
+        """能执行SQL语句"""
         async with factory.get_session() as session:
             result = await session.execute(text('SELECT 1'))
             assert result.scalar() == 1
@@ -56,14 +56,14 @@ class TestGetSession:
                 raise RuntimeError('test_rollback')
 
     async def test_multiple_sessions_independent(self, factory):
-        """多次调用 get_session 产生独立的会话"""
+        """多次调用get_session产生独立的会话"""
         async with factory.get_session() as s1:
             async with factory.get_session() as s2:
                 assert s1 is not s2
 
 
 # ──────────────────────────────────────────────
-# get_service 依赖工厂
+# get_service依赖工厂
 # ──────────────────────────────────────────────
 class TestGetService:
     def test_returns_callable(self, factory):
@@ -91,7 +91,7 @@ class TestGetService:
         assert 'MyService' in (dep.__doc__ or '')
 
     async def test_service_receives_session(self, factory):
-        """依赖注入的服务实例中应含有 AsyncSession"""
+        """依赖注入的服务实例中应含有AsyncSession"""
         class _Svc:
             def __init__(self, db: AsyncSession):
                 self.db = db
@@ -102,7 +102,7 @@ class TestGetService:
             break
 
 # ──────────────────────────────────────────────
-# service 装饰器 (FastAPI 依赖注入)
+# service装饰器 (FastAPI依赖注入)
 # ──────────────────────────────────────────────
 class TestServiceDecorator:
     def test_decorator_returns_class(self, factory):
@@ -115,7 +115,7 @@ class TestServiceDecorator:
         assert MyService.__name__ == 'MyService'
 
     def test_signature_rewritten_with_depends(self, factory):
-        """测试服务类的 __init__ 签名中 db 参数被替换为 Depends"""
+        """测试服务类的 __init__ 签名中db参数被替换为Depends"""
         import inspect
         from fastapi.params import Depends
 
@@ -131,13 +131,13 @@ class TestServiceDecorator:
         assert isinstance(db_param.default, Depends)
 
     def test_signature_rewritten_by_type_annotation(self, factory):
-        """测试通过类型提示 AsyncSession 自动识别并注入"""
+        """测试通过类型提示AsyncSession自动识别并注入"""
         import inspect
         from fastapi.params import Depends
 
         @factory.service()
         class AnotherService:
-            # 参数名不是 db，但类型是 AsyncSession
+            # 参数名不是db，但类型是AsyncSession
             def __init__(self, custom_session: AsyncSession):
                 self.custom_session = custom_session
 
@@ -148,7 +148,7 @@ class TestServiceDecorator:
         assert isinstance(session_param.default, Depends)
 
     def test_fastapi_integration(self, factory):
-        """模拟在 FastAPI 中使用的完整流程"""
+        """模拟在FastAPI中使用的完整流程"""
         from fastapi import FastAPI, Depends
         from fastapi.testclient import TestClient
 
@@ -158,7 +158,7 @@ class TestServiceDecorator:
                 self.db = db
                 
             async def get_data(self):
-                # 简单验证 db 能够执行 SQL
+                # 简单验证db能够执行SQL
                 res = await self.db.execute(text("SELECT 'success'"))
                 return res.scalar()
 

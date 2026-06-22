@@ -1,9 +1,8 @@
 """
 @Author     : zarkhan
 @CreateDate : 2026/5/14
-@Description: SQLAlchemy 混入类
+@Description: SQLAlchemy混入类
 """
-
 from datetime import datetime
 
 from sqlalchemy import Boolean, DateTime, String
@@ -11,7 +10,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 
 class SoftDeleteMixin:
-    """SQLAlchemy 软删除混入类
+    """SQLAlchemy软删除混入类
 
     为业务模型提供 `is_deleted` 和 `deleted_at` 字段，
     用于实现逻辑删除，以保证数据的完整性和可追溯性
@@ -29,7 +28,7 @@ class SoftDeleteMixin:
 
 
 class AuditMixin:
-    """SQLAlchemy 操作人审计混入类
+    """SQLAlchemy操作人审计混入类
 
     为业务模型提供 `created_by` 和 `updated_by` 字段，
     用于记录数据的创建人和最后修改人，便于操作审计追源

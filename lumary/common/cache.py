@@ -1,7 +1,7 @@
 """
 @Author     : zarkhan
 @CreateDate : 2026/6/17
-@Description: 可选的 Redis 缓存管理器与缓存装饰器
+@Description: 可选的Redis缓存管理器与缓存装饰器
 """
 import hashlib
 from functools import wraps
@@ -23,7 +23,7 @@ except ImportError:
     aioredis = Any  # type: ignore
 
     class Redis:  # type: ignore
-        """Redis 降级桩类，解决 Pylance 对 Any | None 的类型收窄警告"""
+        """Redis降级桩类，解决Pylance对Any | None的类型收窄警告"""
         async def close(self) -> None: ...
         async def get(self, name: str) -> Any: ...
         async def set(self, name: str, value: Any, ex: Any = None) -> Any: ...
@@ -34,10 +34,10 @@ _logger = getLogger(__name__)
 
 
 class CacheManager:
-    """Redis 缓存管理器
+    """Redis缓存管理器
 
-    如果未安装 redis 库或未初始化，则默认所有操作静默失效（不抛异常），
-    保证业务在无缓存状态下也能正常运行。
+    如果未安装redis库或未初始化，则默认所有操作静默失效（不抛异常），
+    保证业务在无缓存状态下也能正常运行
     """
     __slots__ = ('redis', 'enabled')
 
@@ -47,28 +47,28 @@ class CacheManager:
         self.enabled: bool = False
 
     async def init(self, url: str) -> None:
-        """初始化 Redis 连接池
+        """初始化Redis连接池
 
         Args:
-            url: Redis 连接 URL (如 redis://localhost:6379/0)
+            url: Redis连接URL (如redis://localhost:6379/0)
             
         Raises:
-            RuntimeError: 如果未安装 redis 依赖时抛出
+            RuntimeError: 如果未安装redis依赖时抛出
         """
         if not REDIS_INSTALLED:
-            raise RuntimeError('未安装 redis 依赖，无法启动缓存！请使用 pip install lumary[redis] 安装')
+            raise RuntimeError('未安装redis依赖，无法启动缓存！请使用pip install lumary[redis] 安装')
 
         self.redis = aioredis.from_url(url, decode_responses=True)
         self.enabled = True
-        _logger.info('Redis 缓存连接成功')
+        _logger.info('Redis缓存连接成功')
 
     async def close(self) -> None:
-        """关闭 Redis 连接"""
+        """关闭Redis连接"""
         redis_client = self.redis
         if redis_client is not None:
             await redis_client.close()
             self.enabled = False
-            _logger.info('Redis 缓存已断开')
+            _logger.info('Redis缓存已断开')
 
     async def get(self, key: str) -> Any:
         """获取缓存
@@ -77,7 +77,7 @@ class CacheManager:
             key: 缓存键
 
         Returns:
-            解析后的缓存数据，不存在或未开启时返回 None
+            解析后的缓存数据，不存在或未开启时返回None
         """
         redis_client = self.redis
 
@@ -88,7 +88,7 @@ class CacheManager:
             val = await redis_client.get(key)
             return json_loads(val) if val else None
         except Exception as e:
-            _logger.error(f'Redis get 错误: {e}')
+            _logger.error(f'Redis get错误: {e}')
             return None
 
     async def set(self, key: str, value: Any, expire: int = 3600) -> None:
@@ -96,7 +96,7 @@ class CacheManager:
 
         Args:
             key: 缓存键
-            value: 缓存数据（需可被 json 序列化）
+            value: 缓存数据（需可被json序列化）
             expire: 过期时间（秒）
         """
         redis_client = self.redis
@@ -107,7 +107,7 @@ class CacheManager:
         try:
             await redis_client.set(key, json_dumps(value), ex=expire)
         except Exception as e:
-            _logger.error(f'Redis set 错误: {e}')
+            _logger.error(f'Redis set错误: {e}')
 
     async def delete(self, key: str) -> None:
         """删除单个缓存
@@ -123,12 +123,12 @@ class CacheManager:
         try:
             await redis_client.delete(key)
         except Exception as e:
-            _logger.error(f'Redis delete 错误: {e}')
+            _logger.error(f'Redis delete错误: {e}')
 
     async def clear_namespace(self, namespace: str) -> None:
         """清理特定命名空间下的所有缓存（如某个表的所有查询缓存）
 
-        使用 SCAN 迭代匹配清理，避免阻塞 Redis 主线程
+        使用SCAN迭代匹配清理，避免阻塞Redis主线程
 
         Args:
             namespace: 命名空间前缀
@@ -151,7 +151,7 @@ class CacheManager:
                     break
 
         except Exception as e:
-            _logger.error(f'Redis scan/delete 错误: {e}')
+            _logger.error(f'Redis scan/delete错误: {e}')
 
 
 # 全局单例
@@ -159,13 +159,13 @@ cache = CacheManager()
 
 
 def cache_response(namespace: str, expire: int = 3600) -> Callable:
-    """API 响应缓存装饰器
+    """API响应缓存装饰器
 
-    自动根据请求路径和参数生成缓存 Key，并将函数的返回结果缓存。
-    当 CRUDBase 发生数据变动时，可通过 namespace 批量使其失效。
+    自动根据请求路径和参数生成缓存Key，并将函数的返回结果缓存
+    当CRUDBase发生数据变动时，可通过namespace批量使其失效
 
     Args:
-        namespace: 缓存命名空间（建议与模型 tablename 保持一致）
+        namespace: 缓存命名空间（建议与模型tablename保持一致）
         expire: 过期时间（秒）
 
     Returns:
@@ -181,15 +181,15 @@ def cache_response(namespace: str, expire: int = 3600) -> Callable:
 
             执行流程：
             1. 判断全局缓存开关，未启用直接放行原函数
-            2. 自动从 args/kwargs 提取 Request 对象
+            2. 自动从args/kwargs提取Request对象
             3. 根据请求方法+路径+查询参数生成哈希缓存key；无Request则使用函数名兜底
             4. 读取缓存，命中直接返回缓存数据
             5. 未命中执行原始接口，将返回值序列化为可缓存格式写入缓存
             6. 返回原始接口完整响应对象
 
             Args:
-                *args: 接口位置参数，自动遍历匹配 Request 实例
-                **kwargs: 接口关键字参数，优先读取 request 入参
+                *args: 接口位置参数，自动遍历匹配Request实例
+                **kwargs: 接口关键字参数，优先读取request入参
 
             Returns:
                 Any: 原接口返回的完整响应对象（Pydantic模型/字典/列表等）
@@ -197,7 +197,7 @@ def cache_response(namespace: str, expire: int = 3600) -> Callable:
             if not cache.enabled:
                 return await func(*args, **kwargs)
 
-            # 尝试从参数中提取 Request 对象以构建精确的缓存 Key
+            # 尝试从参数中提取Request对象以构建精确的缓存Key
             request: Request | None = kwargs.get('request')
 
             if not request:
@@ -223,7 +223,7 @@ def cache_response(namespace: str, expire: int = 3600) -> Callable:
             # 未命中则执行原函数
             response = await func(*args, **kwargs)
 
-            # 解析数据用于缓存（支持 Pydantic BaseModel）
+            # 解析数据用于缓存（支持Pydantic BaseModel）
             to_cache = response
 
             if hasattr(response, 'model_dump'):

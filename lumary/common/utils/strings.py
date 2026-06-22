@@ -3,19 +3,19 @@
 @CreateDate : 2026/6/13
 @Description: 字符串与序列化工具
 """
-
 import json
 import random
 import string
 from typing import Any
 
-# 尝试导入 orjson 以获得极致性能
+# 尝试导入orjson以获得极致性能
 try:
     import orjson
 
     HAS_ORJSON = True
 except ImportError:
     HAS_ORJSON = False
+    orjson = None
 
 
 def camel_to_snake(s: str) -> str:
@@ -57,15 +57,15 @@ def random_string(length: int = 16) -> str:
 
 
 def json_dumps(obj: Any) -> str:
-    """高性能 JSON 序列化
+    """高性能JSON序列化
 
-    如果环境安装了 orjson，则使用 orjson 加速序列化；否则回退到标准库 json
+    如果环境安装了orjson，则使用orjson加速序列化；否则回退到标准库json
 
     Args:
         obj: 要序列化的对象
 
     Returns:
-        JSON 字符串
+        JSON字符串
     """
     if HAS_ORJSON:
         return orjson.dumps(obj).decode('utf-8')
@@ -73,15 +73,15 @@ def json_dumps(obj: Any) -> str:
 
 
 def json_loads(s: str | bytes) -> Any:
-    """高性能 JSON 反序列化
+    """高性能JSON反序列化
 
-    如果环境安装了 orjson，则使用 orjson 加速反序列化；否则回退到标准库 json
+    如果环境安装了orjson，则使用orjson加速反序列化；否则回退到标准库json
 
     Args:
-        s: JSON 字符串或字节
+        s: JSON字符串或字节
 
     Returns:
-        反序列化后的 Python 对象
+        反序列化后的Python对象
     """
     if HAS_ORJSON:
         return orjson.loads(s)
