@@ -9,6 +9,8 @@ from datetime import datetime
 from logging.handlers import TimedRotatingFileHandler
 from pathlib import Path
 
+from typing import Any
+
 from .context import get_request_id
 
 # -------------------------------------
@@ -17,7 +19,7 @@ from .context import get_request_id
 old_factory = logging.getLogRecordFactory()
 
 
-def _record_factory(*args, **kwargs) -> logging.LogRecord:
+def _record_factory(*args: Any, **kwargs: Any) -> logging.LogRecord:
     """自定义日志记录工厂，在每条日志记录上注入当前请求的request_id
 
     Args:
@@ -145,10 +147,10 @@ _ROTATION_MAP: dict[str, tuple[str, int] | None] = {
     'month': None,  # 自定义处理器
     'year': None,  # 自定义处理器
 }
-# 日志格式定义
-NORMAL_FORMAT = '%(asctime)s | %(levelname)-8s | %(request_id)-36.36s | %(name)-50.50s | %(lineno)-4d | %(message)s'
+# 日志格式定义 (增加了时区和线程/进程信息，更利于排查并发问题)
+NORMAL_FORMAT = '%(asctime)s.%(msecs)03d | %(levelname)-8s | %(process)d:%(thread)d | %(request_id)-32.32s | %(name)-30.30s | %(lineno)-4d | %(message)s'
 # 配置日志格式
-logging.basicConfig(level=logging.DEBUG, format=NORMAL_FORMAT, force=True)
+logging.basicConfig(level=logging.DEBUG, format=NORMAL_FORMAT, datefmt='%Y-%m-%d %H:%M:%S', force=True)
 
 
 # 方法1：动态修改全局日志级别

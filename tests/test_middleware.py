@@ -31,10 +31,8 @@ def client():
 # 自动生成request_id
 # ──────────────────────────────────────────────
 class TestRequestIdAutoGenerate:
-    _UUID4_RE = re.compile(
-        r'^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-        re.IGNORECASE
-    )
+    # 匹配无短横线的 32 位 UUID4 hex 格式
+    _UUID4_RE = re.compile(r'^[0-9a-f]{12}4[0-9a-f]{3}[89ab][0-9a-f]{15}$', re.IGNORECASE)
 
     def test_response_has_x_request_id_header(self, client):
         resp = client.get('/rid')

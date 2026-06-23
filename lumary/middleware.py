@@ -38,28 +38,40 @@ class RequestIdMiddleware:
             return
 
         # 提取或生成Request ID
-        headers = dict(scope.get('headers', []))
-        request_id_bytes = headers.get(b'x-request-id')
+        # 优化：ASGI headers 是一个包含 tuple 的 list，不需要转成 dict 也能找，转 dict 每次请求都会产生性能损耗
+        request_id = None
 
-        if request_id_bytes and isinstance(request_id_bytes, bytes):
-            request_id = request_id_bytes.decode('utf-8')
-        else:
+        for name, value in scope.get('headers', []):
+            if name == b'x-request-id':
+                request_id = value.decode('latin-1')
+                break
+
+        if not request_id:
             request_id = generate_request_id()
 
         # 写入上下文变量（不做reset，让值持续到uvicorn.access输出）
         set_request_id(request_id)
 
         if scope['type'] == 'http':
-            # 优化：只在response.start阶段拦截并修改headers，后续数据块直接透传，提升性能
-            response_started = False
+            # 将 request_id 提前编码为 bytes，避免在内部闭包中反复执行 encode
+            request_id_bytes_val = request_id.encode('latin-1')
 
             async def send_wrapper(message: Message) -> None:
-                nonlocal response_started
-                if not response_started and message['type'] == 'http.response.start':
-                    response_started = True
-                    resp_headers  = list(message.get('headers', []))
-                    resp_headers .append((b'x-request-id', request_id.encode('utf-8')))
-                    message['headers'] = resp_headers
+                """包装响应消息
+
+                Args:
+                    message: ASGI响应消息
+                """
+                if message['type'] == 'http.response.start':
+                    # 使用 list comprehension 或 copy 避免修改原始的可变引用
+                    # 避免多次调用 append 导致的重复头部或性能损耗
+                    headers = message.get('headers', [])
+
+                    # 快速检查是否已经存在 x-request-id（应对某些特殊内部重定向或早早设置的情况）
+                    if not any(k == b'x-request-id' for k, _ in headers):
+                        headers.append((b'x-request-id', request_id_bytes_val))
+
+                    message['headers'] = headers
                 await send(message)
 
             await self.app(scope, receive, send_wrapper)

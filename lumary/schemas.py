@@ -37,7 +37,10 @@ class SchemaBase(BaseModel):
         # ✅ 5. 全局配置datetime序列化格式（原生支持，完美兼容OpenAPI）
         json_encoders={
             datetime: lambda v: v.strftime('%Y-%m-%d %H:%M:%S')
-        }
+        },
+        
+        # ✅ 6. 开启别名生成器（支持驼峰等），如果你项目需要全局驼峰响应
+        # alias_generator=...
     )
 
 
@@ -84,7 +87,12 @@ class SystemInfoOut(SchemaBase):
 class SystemMetricsOut(SchemaBase):
     """系统运行指标输出"""
     uptime_seconds: float = Field(description='应用运行时长（秒）')
-    memory_mb: float = Field(description='进程内存占用（MB），不支持则为 -1')
+    memory_mb: float = Field(description='进程组总内存占用（MB）')
+    cpu_percent: float = Field(description='进程组CPU总使用率（%）')
+    disk_usage_percent: float = Field(description='系统磁盘使用率（%）')
+    workers_count: int = Field(description='当前工作进程数量')
+    threads_count: int = Field(description='当前活动线程数量')
+    tasks_count: int = Field(description='当前异步任务数量')
 
 
 class PageData(SchemaBase, Generic[T]):
@@ -122,7 +130,7 @@ class PageData(SchemaBase, Generic[T]):
 
 
 class APIResponseBase(SchemaBase):
-    """底层基础响应，同时承载data + extra两套泛型"""
+    """底层基础响应"""
     request_id: str = Field(description='请求唯一追踪ID')
     code: int = Field(default=0, description='状态码，0为成功，其他为错误')
     message: str = Field(default='操作成功', description='提示信息')
@@ -133,9 +141,8 @@ class APIResponse(APIResponseBase, Generic[T]):
     data: T | None = Field(default=None, description='业务主体响应数据')
 
 
-class APIResponseWithExtra(APIResponseBase, Generic[T, E]):
+class APIResponseWithExtra(APIResponse, Generic[T, E]):
     """携带业务数据+自定义结构化扩展的响应, T为业务数据类型，E为扩展数据类型"""
-    data: T | None = Field(default=None, description='业务主体响应数据')
     extra: E | None = Field(default=None, description='自定义扩展信息')
 
 

@@ -10,12 +10,12 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 import lumary.common.mqtt as mqtt_module
-from lumary.common.mqtt import MqttManager, topic_matches
+from lumary.common.mqtt import MQTTManager, topic_matches
 
 
 @pytest.fixture
-def mock_missing_aiomqtt():
-    """模拟未安装aiomqtt库的环境"""
+def mock_missing_paho():
+    """模拟未安装paho-mqtt库的环境"""
     import sys
     mqtt_module = sys.modules['lumary.common.mqtt']
     orig_mqtt_installed = mqtt_module.MQTT_INSTALLED
@@ -34,14 +34,14 @@ def test_topic_matches():
 
 
 @pytest.mark.asyncio
-async def test_mqtt_manager_missing_dependency_fallback(mock_missing_aiomqtt):
-    """测试未安装aiomqtt时，MQTT管理器平滑降级（静默空跑）"""
-    manager = MqttManager()
-    
+async def test_mqtt_manager_missing_dependency_fallback(mock_missing_paho):
+    """测试未安装paho-mqtt时，MQTT管理器平滑降级"""
+    manager = MQTTManager()
+
     # 未安装时init应该抛出RuntimeError
-    with pytest.raises(RuntimeError, match='未安装aiomqtt依赖'):
+    with pytest.raises(RuntimeError, match='未安装paho-mqtt依赖'):
         await manager.init('localhost')
-        
+
     assert manager.enabled is False
     
     # 装饰器应能正常挂载（不报错）

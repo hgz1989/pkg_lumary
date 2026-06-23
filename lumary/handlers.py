@@ -5,38 +5,68 @@
 """
 from functools import cache
 from logging import getLogger
-from typing import Any, Callable, Awaitable, Sequence
+from typing import TypeAlias, Any, Callable, Awaitable, Sequence
 
 from fastapi import Request, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException
-from starlette.responses import Response
 
 from .schemas import response_fail, response_with_extra_fail
 
 _logger = getLogger(__name__)
 
-ExceptionHandlers = dict[Any, Callable[[Request, Any], Response | Awaitable[Response]]]
+ExceptionHandlerFunc: TypeAlias = Callable[[Request, Any], Awaitable[JSONResponse]]
+ExceptionHandlers: TypeAlias = dict[type[Exception], ExceptionHandlerFunc]
+
+# 过滤监控接口，减少4xx日志刷屏
+MONITOR_PATH_PREFIXES = ('/system/', '/health')
 
 
-def _is_json_parse_error(errors: list[dict] | Sequence[dict]) -> bool:
+def _is_monitor_path(path: str) -> bool:
+    """判断是否为监控接口，客户端错误日志降级
+
+    Args:
+        path: 当前请求路径
+
+    Returns:
+        是否为监控接口
+    """
+    return path.startswith(MONITOR_PATH_PREFIXES)
+
+
+def _is_json_parse_error(errors: Sequence[dict]) -> bool:
     """判断是否为JSON解析错误而非字段校验错误
-
-    仅当Pydantic报告type='json_invalid' 时才返回True，
-    避免将list类型字段校验失败（loc中含整数索引）误判为JSON解析错误
 
     Args:
         errors: Pydantic校验错误列表
 
     Returns:
-        True表示JSON解析错误应返回400，False表示字段校验错误应返回422
-    """
-    for error in errors:
-        if error.get('type', '') == 'json_invalid':
-            return True
 
-    return False
+    """
+    return any(err.get('type', '') == 'json_invalid' for err in errors)
+
+
+def _build_json_resp(code: int, message: str, status_code: int, extra: dict | None = None) -> JSONResponse:
+    """构建JSON响应
+
+    Args:
+        code: 状态码
+        message: 提示信息
+        status_code: HTTP状态码
+        extra: 扩展信息
+
+    Returns:
+        JSON响应
+    """
+    if extra:
+        resp_model = response_with_extra_fail(code=code, message=message, extra=extra)
+    else:
+        resp_model = response_fail(code=code, message=message)
+    return JSONResponse(
+        content=resp_model.model_dump(exclude_none=True),
+        status_code=status_code
+    )
 
 
 @cache
@@ -81,21 +111,17 @@ def build_exception_handlers() -> ExceptionHandlers:
         # JSON格式非法（如 {invalid}）→ 400；字段校验失败 → 422
         if _is_json_parse_error(errors):
             http_status = status.HTTP_400_BAD_REQUEST
-            business_code = status.HTTP_400_BAD_REQUEST
+            biz_code = status.HTTP_400_BAD_REQUEST
         else:
             http_status = status.HTTP_422_UNPROCESSABLE_CONTENT
-            business_code = status.HTTP_422_UNPROCESSABLE_CONTENT
+            biz_code = status.HTTP_422_UNPROCESSABLE_CONTENT
 
-        _logger.error(f'请求参数校验失败: {error_msg}')
-
-        resp = response_fail(
-            code=business_code,
-            message=error_msg
-        )
-        return JSONResponse(
-            content=resp.model_dump(exclude_none=True),
-            status_code=http_status
-        )
+        # 如果是监控探针请求导致的 4xx/5xx，降级为 DEBUG 日志防止刷屏
+        if _is_monitor_path(_request.url.path):
+            _logger.debug(f'请求参数校验失败: {error_msg}')
+        else:
+            _logger.error(f'请求参数校验失败: {error_msg}')
+        return _build_json_resp(code=biz_code, message=error_msg, status_code=http_status)
 
     # ── 第二层：所有HTTP协议异常（使用starlette.HTTPException作为基类，确保捕获框架自动抛出的404/405等）──
     async def http_exception_handler(_request: Request, exc: HTTPException) -> JSONResponse:
@@ -122,9 +148,10 @@ def build_exception_handlers() -> ExceptionHandlers:
         else:
             extra = None
 
-        _logger.error(
-            f'HTTP Exception: Status Code = {status_code}, Detail = {exc.detail}, Headers = {extra}'
-        )
+        if _is_monitor_path(_request.url.path):
+            _logger.debug(f'HTTP Exception: Status Code = {status_code}, Detail = {exc.detail}, Headers = {extra}')
+        else:
+            _logger.error(f'HTTP Exception: Status Code = {status_code}, Detail = {exc.detail}, Headers = {extra}')
 
         if extra:
             data['extra'] = extra

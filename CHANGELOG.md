@@ -2,6 +2,28 @@
 
 本文档用于记录 `lumary` 框架的所有显著变更、新特性以及性能优化。
 
+## [0.2.3] - 2026-06-23
+
+### 🚀 新特性 (Features)
+- **Database (CRUD)**: 新增极速原生 SQL 级批量更新方法 `update_multi`，彻底绕过 ORM 实例化开销。新增原生 SQL 级批量删除方法 `remove_multi`，自动适配软删除与物理删除。纯写入场景下 `batch_create` 方法重构，启用底层 `insert(model).values()` 提升性能。
+- **Core / Application**: 新增 `/metrics` 端点的独立资源监控模块 `lumary.common.utils.metrics`，实现纯标准库、多平台的系统资源（内存、CPU、磁盘）及 Uvicorn 多进程 Worker 的精准指标采集。
+- **WebSockets**: 增强 `WSConnectionManager`，在执行广播操作时添加 `return_exceptions=True` 机制，防止单一失效客户端导致的大规模广播雪崩效应。
+
+### ⚡ 性能优化 (Performance)
+- **Database (CRUD)**: `get_page` 分页逻辑中新增 `count == 0` 短路判断，当无数据时跳过额外 I/O 查询。`get_multi` 兜底分页机制中，当未显式指定 `order_by` 时，自动采用主键降序排列，消除深分页数据重复或错位。修复 `_validate_kwargs_keys` 实例方法上不当使用 `@lru_cache` 导致的内存与数据库连接泄漏隐患。修复 `get_one` 触发 `scalar_one_or_none()` 潜在的全表扫描风险，加入强制的 `.limit(2)` 限制。
+- **Routing & Middleware**: `application.py` 中 `/info` 端点的全量路由遍历计算重构为缓存属性 `_sub_apps_count` 及 `_routes_count`，时间复杂度从 O(N) 降至 O(1)。`RequestIdMiddleware` 中间件重写 ASGI 拦截逻辑，移除不必要的全局字典转化，极大压榨高并发下的流式响应性能。
+
+### 🐛 问题修复 (Bug Fixes)
+- **Core / Application**: 修复 `allow_credentials=True` 且未指定具体 Origin 列表时的 CORS 配置漏洞，防止浏览器跨域安全拦截。修复子应用 `_application_lifespan` 挂载雪崩问题：单个子应用异常不再导致整个主框架崩溃。修复子应用挂载时对无序文件系统的依赖，增加强制字典排序，保证路由初始化的确定性。新增子应用重复挂载的拦截机制，彻底阻断路由重叠污染。修复 `route.py` 中的向后兼容性，安全清理 `secure_cloned_response_field` 防止某些 FastAPI/Starlette 版本的 `ResponseValidationError` 报错。
+- **Database (CRUD)**: 修复外层传递 `options=[joinedload(...)]` 时 `get_multi` 和 `get_one` 方法未调用 `.unique()` 导致的一对多关联查询报错。
+- **Context & UUIDs**: 修复 `generate_request_id` 输出，改用 `uuid4().hex` 产生不带短横线的 32 位纯字符，完美兼容 W3C Trace Context，并同步修复了所有单元测试中断言。
+
+### ♻️ 重构与代码规范 (Refactoring & Code Quality)
+- **MQTT (Paho-MQTT 迁移)**: 彻底放弃不稳定的 `aiomqtt`，将底层迁移至官方支持的 `paho-mqtt`。利用原生的 C 扩展后台守护线程 (`loop_start`) 取代自建的事件循环，完美兼容 FastAPI 主线程调度 (`run_coroutine_threadsafe`)。解决 `paho-mqtt` 中大量弃用及未使用变量引发的静态检查警告，同时兼容 API v2 规范。将 `asyncio.iscoroutinefunction` 替换为 `inspect.iscoroutinefunction`，以兼容 Python 3.14+。
+- **Logging**: `logger.py` 默认日志格式增强：时间戳精度提升至毫秒 (`%(msecs)03d`) 且采用小数点分隔以利于 ELK 结构化解析，并追加进程与线程追踪 (`%(process)d:%(thread)d`) 支持多 Worker 模式排障。
+- **Cache**: 修复 `cache.py` 装饰器中 `Request` 类型探测可能引发的 Pylance 鸭子类型推断错误，补全类型声明。
+- **Code Style**: 路由模块重命名：将 `lumary/ws/router.py` 规范化为 `lumary/ws/routing.py`，与 FastAPI 源码命名对齐。提取 `crud.py` 局部导入至文件顶端，消除隐式类型提示警告。精简 `schemas.py` 继承链，优化 `APIResponseWithExtra` 复用逻辑。
+
 ## [0.2.2] - 2026-06-22
 
 ### 🚀 新特性 (Features)
