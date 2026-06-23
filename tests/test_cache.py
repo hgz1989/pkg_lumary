@@ -17,29 +17,28 @@ from lumary.common.cache import CacheManager, cache, cache_response
 
 
 @pytest.fixture
-def mock_missing_redis():
-    """模拟未安装redis库的环境"""
+def mock_missing_aiocache():
+    """模拟未安装aiocache库的环境"""
     import sys
     cache_module = sys.modules['lumary.common.cache']
-    orig_redis_installed = cache_module.REDIS_INSTALLED
-    
-    # 强制修改状态为未安装
-    cache_module.REDIS_INSTALLED = False
-    
-    yield
-    
-    # 恢复状态
-    cache_module.REDIS_INSTALLED = orig_redis_installed
+    orig_aiocache_installed = cache_module.AIOCACHE_INSTALLED
 
+    # 替换标识为False
+    cache_module.AIOCACHE_INSTALLED = False
+
+    yield
+
+    # 恢复原状
+    cache_module.AIOCACHE_INSTALLED = orig_aiocache_installed
 
 @pytest.mark.asyncio
-async def test_cache_manager_missing_dependency_fallback(mock_missing_redis):
+async def test_cache_manager_missing_dependency_fallback(mock_missing_aiocache):
     """测试未安装redis时，缓存管理器平滑降级（静默空跑）"""
     manager = CacheManager()
     
     # 未安装时init应该抛出RuntimeError
-    with pytest.raises(RuntimeError, match='未安装redis依赖'):
-        await manager.init('redis://localhost:6379/0')
+    with pytest.raises(RuntimeError, match='未安装aiocache依赖'):
+        await manager.init('redis://localhost')
         
     # 其他方法应该静默失效，不抛出异常
     assert manager.enabled is False
@@ -52,7 +51,7 @@ async def test_cache_manager_missing_dependency_fallback(mock_missing_redis):
 
 
 @pytest.mark.asyncio
-async def test_cache_response_decorator_missing_dependency(mock_missing_redis):
+async def test_cache_response_decorator_missing_dependency(mock_missing_aiocache):
     """测试未安装redis时，装饰器不阻断原函数执行"""
     
     # 为了测试装饰器，我们需要一个假的缓存管理器状态

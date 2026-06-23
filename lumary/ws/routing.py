@@ -4,6 +4,7 @@
 @Description: WebSocket专用路由，禁止注册常规HTTP接口
 """
 from typing import Any
+
 from fastapi import APIRouter
 
 

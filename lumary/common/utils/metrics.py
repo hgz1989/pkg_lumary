@@ -4,8 +4,10 @@
 @Description: 系统资源指标采集模块（纯标准库、多进程支持）
 """
 import os
-import sys
+import asyncio
 from multiprocessing import cpu_count
+from sys import platform
+from threading import active_count
 from typing import Any
 
 
@@ -22,18 +24,18 @@ def get_app_process_pids() -> list[int]:
     master_pid = parent_pid if parent_pid > 1 else current_pid
 
     # 在 Linux 进一步校验父进程名，如果不是 python/uvicorn/gunicorn，则说明当前进程就是独立主进程
-    if sys.platform == 'linux' and master_pid != current_pid:
+    if platform == 'linux' and master_pid != current_pid:
         try:
             with open(f'/proc/{master_pid}/comm', 'r') as f:
                 comm = f.read().strip().lower()
                 if 'python' not in comm and 'uvicorn' not in comm and 'gunicorn' not in comm:
                     master_pid = current_pid
-        except Exception:
+        except OSError:
             pass
 
     pids = [master_pid]
 
-    if sys.platform == 'linux':
+    if platform == 'linux':
         try:
             for d in os.listdir('/proc'):
                 if d.isdigit():
@@ -45,16 +47,16 @@ def get_app_process_pids() -> list[int]:
                             ppid = int(f.read().split()[3])
                             if ppid == master_pid:
                                 pids.append(pid)
-                    except Exception:
+                    except (OSError, IndexError, ValueError):
                         pass
-        except Exception:
+        except OSError:
             pass
-    elif sys.platform == 'win32':
+    elif platform == 'win32':
         import ctypes
         from ctypes import wintypes
 
         try:
-            TH32CS_SNAPPROCESS = 0x00000002
+            th32cs_snapprocess = 0x00000002
 
             class PROCESSENTRY32(ctypes.Structure):  # type: ignore
                 _fields_ = [
@@ -70,18 +72,18 @@ def get_app_process_pids() -> list[int]:
                     ('szExeFile', ctypes.c_char * 260)
                 ]
 
-            hProcessSnap = ctypes.windll.kernel32.CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0)  # type: ignore
-            if hProcessSnap != -1:
+            h_process_snap = ctypes.windll.kernel32.CreateToolhelp32Snapshot(th32cs_snapprocess, 0)  # type: ignore
+            if h_process_snap != -1:
                 pe32 = PROCESSENTRY32()
                 pe32.dwSize = ctypes.sizeof(PROCESSENTRY32)
-                if ctypes.windll.kernel32.Process32First(hProcessSnap, ctypes.byref(pe32)):  # type: ignore
+                if ctypes.windll.kernel32.Process32First(h_process_snap, ctypes.byref(pe32)):  # type: ignore
                     while True:
                         if pe32.th32ParentProcessID == master_pid and pe32.th32ProcessID != master_pid:
                             pids.append(pe32.th32ProcessID)
-                        if not ctypes.windll.kernel32.Process32Next(hProcessSnap, ctypes.byref(pe32)):  # type: ignore
+                        if not ctypes.windll.kernel32.Process32Next(h_process_snap, ctypes.byref(pe32)):  # type: ignore
                             break
-                ctypes.windll.kernel32.CloseHandle(hProcessSnap)  # type: ignore
-        except Exception:
+                ctypes.windll.kernel32.CloseHandle(h_process_snap)  # type: ignore
+        except (OSError, AttributeError):
             pass
     else:
         # macOS 等通过 ps 命令兜底
@@ -95,7 +97,7 @@ def get_app_process_pids() -> list[int]:
                     ppid = int(parts[1])
                     if ppid == master_pid and pid != master_pid:
                         pids.append(pid)
-        except Exception:
+        except (subprocess.SubprocessError, ValueError, OSError):
             pass
 
     if current_pid not in pids:
@@ -115,10 +117,10 @@ def get_system_metrics() -> dict[str, Any]:
 
     memory_mb = 0.0
 
-    if sys.platform == 'win32':
+    if platform == 'win32':
         import ctypes
         from ctypes import wintypes
-        class PROCESS_MEMORY_COUNTERS_EX(ctypes.Structure):  # type: ignore
+        class ProcessMemoryCountersEx(ctypes.Structure):  # type: ignore
             _fields_ = [
                 ('cb', wintypes.DWORD),
                 ('PageFaultCount', wintypes.DWORD),
@@ -138,15 +140,16 @@ def get_system_metrics() -> dict[str, Any]:
                 # 0x0410 = PROCESS_QUERY_INFORMATION | PROCESS_VM_READ
                 process_handle = ctypes.windll.kernel32.OpenProcess(0x0410, False, pid)  # type: ignore
                 if process_handle:
-                    counters = PROCESS_MEMORY_COUNTERS_EX()
-                    counters.cb = ctypes.sizeof(PROCESS_MEMORY_COUNTERS_EX)
-                    if ctypes.windll.psapi.GetProcessMemoryInfo(process_handle, ctypes.byref(counters),
-                                                                ctypes.sizeof(counters)):  # type: ignore
+                    counters = ProcessMemoryCountersEx()
+                    counters.cb = ctypes.sizeof(ProcessMemoryCountersEx)
+                    counters_ptr = ctypes.byref(counters)
+                    counters_size = ctypes.sizeof(counters)
+                    if ctypes.windll.psapi.GetProcessMemoryInfo(process_handle, counters_ptr, counters_size):  # type: ignore
                         memory_mb += counters.WorkingSetSize / 1024 / 1024
                     ctypes.windll.kernel32.CloseHandle(process_handle)  # type: ignore
-            except Exception:
+            except (OSError, AttributeError):
                 pass
-    elif sys.platform == 'linux':
+    elif platform == 'linux':
         for pid in pids:
             try:
                 with open(f'/proc/{pid}/status', 'r') as f:
@@ -155,7 +158,7 @@ def get_system_metrics() -> dict[str, Any]:
                             kb = int(line.split()[1])
                             memory_mb += kb / 1024
                             break
-            except Exception:
+            except (OSError, ValueError, IndexError):
                 pass
     else:
         import subprocess
@@ -167,7 +170,7 @@ def get_system_metrics() -> dict[str, Any]:
                     memory_mb += kb / 1024
                 except ValueError:
                     pass
-        except Exception:
+        except (subprocess.SubprocessError, OSError):
             pass
 
     if memory_mb == 0.0:
@@ -180,13 +183,13 @@ def get_system_metrics() -> dict[str, Any]:
         try:
             load1, _, _ = os.getloadavg()
             cpu_percent = round((load1 / cpu_count()) * 100, 2)
-        except Exception:
+        except (OSError, NotImplementedError):
             pass
 
     # 磁盘使用率
     disk_usage_percent = 0.0
     try:
-        if sys.platform == 'win32':
+        if platform == 'win32':
             import ctypes
             free_bytes = ctypes.c_ulonglong(0)
             total_bytes = ctypes.c_ulonglong(0)
@@ -207,12 +210,19 @@ def get_system_metrics() -> dict[str, Any]:
             used = total - free
             if total > 0:
                 disk_usage_percent = round((used / total) * 100, 2)
-    except Exception:
+    except (OSError, AttributeError):
         pass
+
+    try:
+        tasks_count = len(asyncio.all_tasks())
+    except RuntimeError:
+        tasks_count = 0
 
     return {
         'memory_mb': round(memory_mb, 2),
         'cpu_percent': cpu_percent,
         'disk_usage_percent': disk_usage_percent,
-        'workers_count': workers_count
+        'workers_count': workers_count,
+        'threads_count': active_count(),
+        'tasks_count': tasks_count
     }

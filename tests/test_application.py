@@ -106,6 +106,11 @@ class TestSystemEndpoints:
         assert 'uptime_seconds' in data
         assert data['uptime_seconds'] >= 0
         assert 'memory_mb' in data
+        assert 'cpu_percent' in data
+        assert 'disk_usage_percent' in data
+        assert 'workers_count' in data
+        assert 'threads_count' in data
+        assert 'tasks_count' in data
 
     def test_request_id_header_forwarded(self, client):
         """客户端传入X-Request-ID时应原样返回"""

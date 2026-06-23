@@ -5,9 +5,8 @@
 """
 from datetime import datetime
 
-from sqlalchemy import String, DateTime
+from sqlalchemy import String, func, DateTime
 from sqlalchemy.orm import Mapped, mapped_column
-from sqlalchemy.sql import func
 from ulid import ULID
 
 from .base import Base

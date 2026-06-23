@@ -29,7 +29,7 @@ __all__ = [
     'cache_response'
 ]
 
-if find_spec('redis') is not None:
+if find_spec('aiocache') is not None:
     from .cache import CacheManager, cache, cache_response
 
     __all__.append('CacheManager')
@@ -37,7 +37,8 @@ if find_spec('redis') is not None:
     __all__.append('cache_response')
 
 if find_spec('paho') is not None:
-    from .mqtt import MQTTManager, topic_matches
+    from .mqtt import topic_matches, MQTTManager, mqtt_client
 
     __all__.append('topic_matches')
     __all__.append('MQTTManager')
+    __all__.append('mqtt_client')

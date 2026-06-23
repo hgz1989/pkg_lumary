@@ -3,9 +3,11 @@
 @CreateDate : 2026/6/14
 @Description: 统一业务异常
 """
+from typing import Any
+
 from starlette import status
 from starlette.exceptions import HTTPException
-from typing import Any, Self
+
 
 # ===================== 统一默认文案常量（便于统一修改/国际化） =====================
 DEFAULT_ERR_MSG = {

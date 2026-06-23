@@ -101,6 +101,9 @@ class WSConnectionManager:
 
         self._redis_channel = channel
         self._redis = aioredis.from_url(url, decode_responses=True)
+        if not self._redis:
+            raise RuntimeError(f'Redis连接初始化失败，无法创建客户端实例: {url}')
+
         self._pubsub = self._redis.pubsub()
         await self._pubsub.subscribe(self._redis_channel)
 
@@ -157,8 +160,14 @@ class WSConnectionManager:
         except Exception as e:
             _logger.error(f'Redis订阅监听异常: {e}')
 
-    async def connect(self, websocket: WebSocket, *, connection_id: str | None = None, group: str | None = None,
-                      metadata: dict[str, Any] | None = None) -> str:
+    async def connect(
+            self,
+            websocket: WebSocket,
+            *,
+            connection_id: str | None = None,
+            group: str | None = None,
+            metadata: dict[str, Any] | None = None
+    ) -> str:
         """接受并存储新的WebSocket连接
 
         Args:
@@ -195,14 +204,17 @@ class WSConnectionManager:
         ws = self._connections.pop(connection_id, None)
         self._metadata.pop(connection_id, None)
         self._last_seen.pop(connection_id, None)
+
         if ws is None:
             return
 
         # 从所有分组中移除，并清理空分组（优化：边遍历边记录，避免二次遍历）
         empty_groups = []
+
         for g, group_conns in self._groups.items():
             if connection_id in group_conns:
                 group_conns.remove(connection_id)
+
                 if not group_conns:
                     empty_groups.append(g)
 
@@ -219,7 +231,11 @@ class WSConnectionManager:
 
     @asynccontextmanager
     async def lifespan(
-            self, websocket: WebSocket, *, connection_id: str | None = None, group: str | None = None,
+            self,
+            websocket: WebSocket,
+            *,
+            connection_id: str | None = None,
+            group: str | None = None,
             metadata: dict[str, Any] | None = None
     ) -> AsyncGenerator[str, None]:
         """上下文管理器方式管理连接生命周期
@@ -316,7 +332,13 @@ class WSConnectionManager:
             _logger.error(f'向 {connection_id} 发送JSON失败：{e}')
 
     # 广播
-    async def broadcast_text(self, message: str, *, group: str | None = None, exclude: set[str] | None = None) -> None:
+    async def broadcast_text(
+            self,
+            message: str,
+            *,
+            group: str | None = None,
+            exclude: set[str] | None = None
+    ) -> None:
         """广播文本消息（如果有Redis则跨实例广播，否则仅本地广播）
 
         Args:
@@ -341,7 +363,13 @@ class WSConnectionManager:
             except Exception as e:
                 _logger.error(f'Redis发布文本广播失败: {e}')
 
-    async def broadcast_json(self, data: Any, *, group: str | None = None, exclude: set[str] | None = None) -> None:
+    async def broadcast_json(
+            self,
+            data: Any,
+            *,
+            group: str | None = None,
+            exclude: set[str] | None = None
+    ) -> None:
         """广播JSON数据（如果有Redis则跨实例广播，否则仅本地广播）
 
         Args:

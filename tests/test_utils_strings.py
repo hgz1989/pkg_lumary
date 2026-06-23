@@ -12,7 +12,7 @@ from lumary.common.utils.strings import (
     random_string,
     json_dumps,
     json_loads,
-    HAS_ORJSON)
+    ORJSON_INSTALLED)
 
 
 # ──────────────────────────────────────────────
@@ -146,4 +146,4 @@ class TestJsonLoads:
 # ──────────────────────────────────────────────
 class TestHasOrjson:
     def test_has_orjson_is_bool(self):
-        assert isinstance(HAS_ORJSON, bool)
+        assert isinstance(ORJSON_INSTALLED, bool)

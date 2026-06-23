@@ -12,9 +12,9 @@ from typing import Any
 try:
     import orjson
 
-    HAS_ORJSON = True
+    ORJSON_INSTALLED = True
 except ImportError:
-    HAS_ORJSON = False
+    ORJSON_INSTALLED = False
     orjson = None
 
 
@@ -67,8 +67,8 @@ def json_dumps(obj: Any) -> str:
     Returns:
         JSON字符串
     """
-    if HAS_ORJSON:
-        return orjson.dumps(obj).decode('utf-8')
+    if ORJSON_INSTALLED:
+        return orjson.dumps(obj).decode('utf-8')  # type: ignore
     return json.dumps(obj, ensure_ascii=False, separators=(',', ':'))
 
 
@@ -83,6 +83,7 @@ def json_loads(s: str | bytes) -> Any:
     Returns:
         反序列化后的Python对象
     """
-    if HAS_ORJSON:
-        return orjson.loads(s)
+    if ORJSON_INSTALLED:
+        assert orjson is not None
+        return orjson.loads(s)  # type: ignore
     return json.loads(s)

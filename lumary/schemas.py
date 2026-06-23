@@ -91,6 +91,8 @@ class SystemMetricsOut(SchemaBase):
     cpu_percent: float = Field(description='进程组CPU总使用率（%）')
     disk_usage_percent: float = Field(description='系统磁盘使用率（%）')
     workers_count: int = Field(description='当前工作进程数量')
+    threads_count: int = Field(description='当前活动线程数量')
+    tasks_count: int = Field(description='当前异步任务数量')
 
 
 class PageData(SchemaBase, Generic[T]):
