@@ -27,7 +27,7 @@ from .lifespan import (
 )
 from .middleware import RequestIdMiddleware
 from .openapi import configure_openapi_schema
-from .route import LumaryRoute
+from .routing import WrapAPIRoute
 from .schemas import (
     APIResponse,
     SystemHealthOut,
@@ -190,7 +190,7 @@ class Lumary(FastAPI):
 
     def _register_system_endpoints(self) -> None:
         """注册系统内置接口（健康检查、详细信息、运行指标）"""
-        router = APIRouter(prefix='/system', tags=['system'], route_class=LumaryRoute)
+        router = APIRouter(prefix='/system', tags=['system'], route_class=WrapAPIRoute)
 
         @router.get('/health', summary='健康检查')
         async def health(_request: Request) -> APIResponse[SystemHealthOut]:

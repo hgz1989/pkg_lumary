@@ -9,7 +9,7 @@ from fastapi.responses import JSONResponse
 from fastapi.testclient import TestClient
 from pydantic import BaseModel
 
-from lumary.route import LumaryRoute
+from lumary.routing import WrapAPIRoute
 from lumary.common.context import set_request_id
 
 
@@ -26,7 +26,7 @@ class UserExtra(BaseModel):
 def client():
     app = FastAPI()
     # 使用自定义路由类
-    router = APIRouter(route_class=LumaryRoute)
+    router = APIRouter(route_class=WrapAPIRoute)
 
     @router.get("/normal-data", response_model=UserOut)
     def normal_data():

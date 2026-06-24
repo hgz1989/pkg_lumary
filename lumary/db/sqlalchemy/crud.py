@@ -74,6 +74,7 @@ class CRUDBase(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
             过滤后的字典
         """
         raw = obj_in if isinstance(obj_in, dict) else obj_in.model_dump(exclude_unset=exclude_unset)
+
         return {k: v for k, v in raw.items() if k in self.valid_columns}
 
     async def create(self, *, obj_in: CreateSchemaType | dict) -> ModelType:
@@ -116,8 +117,10 @@ class CRUDBase(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
             if not return_objs:
                 # 高效批量插入，避免ORM实例化开销
                 insert_data = [self._extract_model_data(obj) for obj in objs_in]
+
                 if insert_data:
                     await self.db.execute(insert(self.model).values(insert_data))
+
                 await self._invalidate_cache()
                 return []
 
@@ -379,6 +382,7 @@ class CRUDBase(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
             影响的行数
         """
         update_data = self._extract_model_data(obj_in, exclude_unset=True)
+
         if not update_data:
             return 0
 

@@ -61,15 +61,18 @@ pip install lumary[standard]
 
 ```python
 from fastapi import FastAPI, APIRouter
-from lumary import LumaryRoute
+from lumary import WrapAPIRoute
 from pydantic import BaseModel
+
 
 class UserOut(BaseModel):
     name: str
     age: int
 
+
 # 实例化 APIRouter 并绑定 LumaryRoute 拦截器，它会自动包装响应
-router = APIRouter(prefix="/users", tags=["用户模块"], route_class=LumaryRoute)
+router = APIRouter(prefix="/users", tags=["用户模块"], route_class=WrapAPIRoute)
+
 
 @router.get("/{user_id}", response_model=UserOut)
 async def get_user(user_id: int):

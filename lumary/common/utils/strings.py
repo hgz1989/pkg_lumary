@@ -84,6 +84,5 @@ def json_loads(s: str | bytes) -> Any:
         反序列化后的Python对象
     """
     if ORJSON_INSTALLED:
-        assert orjson is not None
         return orjson.loads(s)  # type: ignore
     return json.loads(s)

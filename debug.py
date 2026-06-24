@@ -49,17 +49,21 @@ class DemoUserModel(Base):
     username: Mapped[str] = mapped_column(String(50), index=True)
     age: Mapped[int] = mapped_column(Integer)
 
+
 class DemoUserCreate(BaseModel):
     username: str
     age: int
+
 
 class DemoUserUpdate(BaseModel):
     username: str | None = None
     age: int | None = None
 
+
 class DemoUserCRUD(CRUDBase[DemoUserModel, DemoUserCreate, DemoUserUpdate]):
     """测试用CRUD操作类"""
     model = DemoUserModel
+
 
 # ──────────────────────────────────────────────
 # WebSocket 模块初始化
@@ -75,10 +79,12 @@ async def cpu_burner():
             _ = sum([i * i for i in range(100)])
         await asyncio.sleep(0.05)
 
+
 # ──────────────────────────────────────────────
 # 生命周期事件
 # ──────────────────────────────────────────────
 _bg_tasks = []
+
 
 @on_startup
 async def setup_all():
@@ -223,6 +229,7 @@ async def get_db() -> AsyncSession:
     async with session_factory.get_session() as db:
         yield db
 
+
 # ──────────────────────────────────────────────
 # 路由接口定义 - 数据库 CRUD 测试
 # ──────────────────────────────────────────────
@@ -240,7 +247,8 @@ async def db_get_users(db: AsyncSession = Depends(get_db)):
     """获取 SQLite 内存数据库中的所有用户记录"""
     demo_crud = DemoUserCRUD(db)
     users = await demo_crud.get_multi()
-    return response_success(message="获取成功", data=[{"id": u.id, "username": u.username, "age": u.age} for u in users])
+    return response_success(message="获取成功",
+                            data=[{"id": u.id, "username": u.username, "age": u.age} for u in users])
 
 
 # ──────────────────────────────────────────────
@@ -273,4 +281,5 @@ async def ws_broadcast_message(msg: str = "系统通知"):
 
 if __name__ == '__main__':
     import uvicorn
-    uvicorn.run(app, host='0.0.0.0', port=8080)
+
+    uvicorn.run(app, host='0.0.0.0', port=8080, log_config=None)

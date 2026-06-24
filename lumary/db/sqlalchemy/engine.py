@@ -114,6 +114,7 @@ def create_routing_engines(
     )
 
     replica_engines = []
+
     if replica_urls:
         for rep_url in replica_urls:
             replica_engines.append(

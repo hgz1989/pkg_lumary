@@ -55,6 +55,7 @@ class UvicornNameRewriteFilter(logging.Filter):
         # 把uvicorn.error / uvicorn.access的日志名称统一改成uvicorn
         if record.name in ('uvicorn.error', 'uvicorn.access'):
             record.name = 'uvicorn'
+
         return True
 
 
@@ -66,6 +67,7 @@ for logger_name in only_takeover:
     logger.handlers.clear()  # 清空默认处理器
     logger.propagate = True  # 让它走根日志
     logger.setLevel(logging.INFO)  # 屏蔽外部库的DEBUG日志，最低只输出INFO
+
     # 给error / access附加名称重写过滤器
     if logger_name in ('uvicorn.error', 'uvicorn.access'):
         logger.addFilter(UvicornNameRewriteFilter())
@@ -102,11 +104,13 @@ class _MonthlyRotatingFileHandler(TimedRotatingFileHandler):
             下次轮转的UNIX时间戳
         """
         dt = datetime.fromtimestamp(current_time)
+
         # 下月第一天的零点
         if dt.month == 12:
             next_month = datetime(dt.year + 1, 1, 1)
         else:
             next_month = datetime(dt.year, dt.month + 1, 1)
+
         return next_month.timestamp()
 
 
@@ -217,10 +221,12 @@ def setup_logger(
 
     # 1. 尝试获取现有的formatter
     current_formatter = None
+
     for h in root_logger.handlers:
         if h.formatter:
             current_formatter = h.formatter
             break
+
     if not current_formatter:
         current_formatter = logging.Formatter(NORMAL_FORMAT)
 
@@ -231,6 +237,7 @@ def setup_logger(
             isinstance(h, logging.StreamHandler) and not isinstance(h, logging.FileHandler)
             for h in root_logger.handlers
         )
+
         if not has_console:
             console_handler = logging.StreamHandler(sys.stdout)
             console_handler.setFormatter(current_formatter)
@@ -242,6 +249,7 @@ def setup_logger(
             for h in root_logger.handlers
             if isinstance(h, logging.StreamHandler) and not isinstance(h, logging.FileHandler)
         ]
+
         for h in handlers_to_remove:
             root_logger.removeHandler(h)
 
@@ -259,6 +267,7 @@ def setup_logger(
 
         if not has_file_handler:
             rotation_key = rotation.lower()
+
             if rotation_key not in _ROTATION_MAP:
                 raise ValueError(
                     f'不支持的轮转粒度 {rotation!r}，'

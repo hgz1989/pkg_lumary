@@ -66,7 +66,7 @@ from .lifespan import (
     on_shutdown,
     clear_hooks
 )
-from .route import LumaryRoute
+from .routing import WrapAPIRoute
 from .schemas import (
     SchemaBase,
     PageParams,
@@ -141,8 +141,8 @@ __all__ = [
     'on_startup',
     'on_shutdown',
     'clear_hooks',
-    # Router
-    'LumaryRoute',
+    # Routing
+    'WrapAPIRoute',
     # Schema
     'SchemaBase',
     'PageParams',
