@@ -38,7 +38,7 @@ class SchemaBase(BaseModel):
         json_encoders={
             datetime: lambda v: v.strftime('%Y-%m-%d %H:%M:%S')
         },
-        
+
         # ✅ 6. 开启别名生成器（支持驼峰等），如果你项目需要全局驼峰响应
         # alias_generator=...
     )
@@ -199,25 +199,6 @@ def response_success(
     return APIResponse(**resp_data)
 
 
-def response_fail(
-        code: int,
-        message: str,
-        data: T | None = None
-) -> APIResponse[T]:
-    """返回失败响应
-
-    Args:
-        code: 错误码
-        message: 错误信息
-        data: 附加错误数据
-
-    Returns:
-        APIResponse[T]
-    """
-    resp_data = _response(code=code, message=message, data=data)
-    return APIResponse(**resp_data)
-
-
 def response_with_extra_success(
         message: str | None = None,
         data: T | None = None,
@@ -237,10 +218,26 @@ def response_with_extra_success(
     return APIResponseWithExtra(**resp_data)
 
 
+def response_fail(
+        code: int,
+        message: str
+) -> APIResponse[T]:
+    """返回失败响应
+
+    Args:
+        code: 错误码
+        message: 错误信息
+
+    Returns:
+        APIResponse[T]
+    """
+    resp_data = _response(code=code, message=message)
+    return APIResponse(**resp_data)
+
+
 def response_with_extra_fail(
         code: int,
         message: str,
-        data: T | None = None,
         extra: E | None = None
 ) -> APIResponseWithExtra[T, E]:
     """返回携带扩展数据的失败响应
@@ -248,11 +245,10 @@ def response_with_extra_fail(
     Args:
         code: 错误码
         message: 错误信息
-        data: 附加错误数据
         extra: 扩展数据
 
     Returns:
         APIResponseWithExtra[T, E]
     """
-    resp_data = _response(code=code, message=message, data=data, extra=extra)
+    resp_data = _response(code=code, message=message, extra=extra)
     return APIResponseWithExtra(**resp_data)

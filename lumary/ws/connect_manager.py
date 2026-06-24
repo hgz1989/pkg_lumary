@@ -26,11 +26,19 @@ except ImportError:
 
 
     class Redis:  # type: ignore
-        async def close(self) -> None: ...
+        """模拟Redis类，仅用于类型提示"""
 
-        async def publish(self, channel: str, message: str) -> Any: ...
+        async def close(self) -> None:
+            """关闭Redis连接"""
+            ...
 
-        def pubsub(self) -> Any: ...
+        async def publish(self, channel: str, message: str) -> Any:
+            """发布消息到指定频道"""
+            ...
+
+        def pubsub(self) -> Any:
+            """获取Pub/Sub对象"""
+            ...
 
 _logger = getLogger(__name__)
 

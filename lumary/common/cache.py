@@ -270,7 +270,7 @@ def cache_response(namespace: str, expire: int = 3600) -> Callable:
             cached_data = await cache.get(cache_key)
 
             if cached_data is not None:
-                _logger.info(f'缓存命中: {cache_key}')
+                _logger.debug(f'缓存命中: {cache_key}')
                 return cached_data
 
             # 未命中则执行原函数

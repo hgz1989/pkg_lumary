@@ -34,6 +34,7 @@ routing_context: ContextVar[str] = ContextVar('routing_context', default='primar
 def use_replica() -> Generator[None, None, None]:
     """上下文管理器：强制当前代码块内的查询走从库（如果存在）"""
     token = routing_context.set('replica')
+
     try:
         yield
     finally:
@@ -44,6 +45,7 @@ def use_replica() -> Generator[None, None, None]:
 def use_primary() -> Generator[None, None, None]:
     """上下文管理器：强制当前代码块内的查询走主库"""
     token = routing_context.set('primary')
+    
     try:
         yield
     finally:

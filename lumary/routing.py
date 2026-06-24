@@ -90,7 +90,7 @@ def _wrap_endpoint(endpoint: Callable) -> Callable:
     return async_wrapper if iscoroutinefunction(endpoint) else sync_wrapper
 
 
-class LumaryRoute(APIRoute):
+class WrapAPIRoute(APIRoute):
     """自动包装响应的自定义路由类
 
     能够拦截路由函数的返回值，并自动包装为标准的APIResponse或APIResponseWithExtra，

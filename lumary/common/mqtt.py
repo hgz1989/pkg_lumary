@@ -8,7 +8,7 @@ from inspect import iscoroutinefunction
 from logging import getLogger
 from typing import Any, Callable
 
-from lumary.common.utils.strings import json_dumps
+from lumary.common.utils import json_dumps
 
 try:
     import paho.mqtt.client as mqtt
@@ -96,8 +96,15 @@ class MQTTManager:
 
         return decorator
 
-    async def init(self, host: str, port: int = 1883, client_id: str | None = None,
-                   username: str | None = None, password: str | None = None, **kwargs: Any) -> None:
+    async def init(
+            self,
+            host: str,
+            port: int = 1883,
+            client_id: str | None = None,
+            username: str | None = None,
+            password: str | None = None,
+            **kwargs: Any
+    ) -> None:
         """初始化并连接MQTT服务器
 
         自动拉起 paho-mqtt 的 loop_start 后台线程
@@ -155,7 +162,7 @@ class MQTTManager:
         _ = userdata
         _ = flags
         _ = args
-        
+
         # paho-mqtt v2 返回的是 ReasonCode 对象，可以直接判断 is_failure
         is_fail = getattr(rc, 'is_failure', rc != 0)
         if not is_fail:
@@ -192,7 +199,7 @@ class MQTTManager:
         """
         _ = client
         _ = userdata
-        
+
         if not self._fastapi_loop:
             return
 
@@ -253,6 +260,7 @@ class MQTTManager:
             self.client.loop_stop()
             self.client.disconnect()
             _logger.info('MQTT客户端已安全关闭')
+
 
 # 全局单例
 mqtt_client = MQTTManager()
