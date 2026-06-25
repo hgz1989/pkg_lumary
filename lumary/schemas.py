@@ -3,11 +3,12 @@
 @CreateDate : 2026/5/14
 @Description: 核心响应与请求数据模型
 """
-from datetime import datetime
+from datetime import datetime, date
 from math import ceil
-from typing import TypeVar, Generic, Sequence, Any
+from typing import TypeVar, Generic, Sequence
 
 from pydantic import BaseModel, ConfigDict, Field
+from pydantic.alias_generators import to_pascal
 
 from .__version__ import __version__ as lumary_version
 from .common import get_request_id
@@ -34,13 +35,14 @@ class SchemaBase(BaseModel):
         # ✅ 4. 允许任意类型（支持泛型绑定ORM模型等）
         arbitrary_types_allowed=True,
 
-        # ✅ 5. 全局配置datetime序列化格式（原生支持，完美兼容OpenAPI）
-        json_encoders={
-            datetime: lambda v: v.strftime('%Y-%m-%d %H:%M:%S')
-        },
+        # ✅ 5. 开启别名生成器（支持驼峰等），如果你项目需要全局驼峰响应
+        alias_generator=to_pascal,
 
-        # ✅ 6. 开启别名生成器（支持驼峰等），如果你项目需要全局驼峰响应
-        # alias_generator=...
+        # ✅ 6. 其他配置...
+        json_encoders={
+            datetime: lambda v: v.isoformat().replace('T', ' '),
+            date: lambda v: v.isoformat(),
+        }
     )
 
 
@@ -111,7 +113,7 @@ class PageData(SchemaBase, Generic[T]):
             page: int,
             size: int,
             total: int
-    ) -> 'PageData[T]':
+    ) -> PageData[T]:
         """根据查询结果构建分页响应
 
         自动计算总页数，避免调用方重复手动计算
@@ -129,49 +131,36 @@ class PageData(SchemaBase, Generic[T]):
         return cls(items=items, page=page, size=size, pages=pages, total=total)
 
 
-class APIResponseBase(SchemaBase):
-    """底层基础响应"""
-    request_id: str = Field(description='请求唯一追踪ID')
+class APIResponse(SchemaBase, Generic[T, E]):
+    """统一API响应模型, T为业务数据类型, E为扩展数据类型"""
+    request_id: str = Field(default_factory=get_request_id, description='请求唯一追踪ID')
     code: int = Field(default=0, description='状态码，0为成功，其他为错误')
     message: str = Field(default='操作成功', description='提示信息')
-
-
-class APIResponse(APIResponseBase, Generic[T]):
-    """仅携带业务数据的通用响应, T为业务数据类型"""
     data: T | None = Field(default=None, description='业务主体响应数据')
-
-
-class APIResponseWithExtra(APIResponse, Generic[T, E]):
-    """携带业务数据+自定义结构化扩展的响应, T为业务数据类型，E为扩展数据类型"""
     extra: E | None = Field(default=None, description='自定义扩展信息')
 
 
-def _response(
-        code: int | None = None,
-        message: str | None = None,
+def build_response(
+        code: int = 0,
+        message: str = '操作成功',
         data: T | None = None,
         extra: E | None = None
-) -> dict[str, Any]:
-    """返回通用响应
+) -> APIResponse[T, E]:
+    """构建统一API响应
 
     Args:
-        code: 状态码
+        code: 状态码 (0为成功，非0为错误)
         message: 提示信息
-        data: 响应数据
-        extra: 扩展数据
+        data: 响应数据 (可选)
+        extra: 扩展数据 (可选)
 
     Returns:
-        APIResponse[T]
+        APIResponse[T, E]
     """
-    kwargs: dict[str, Any] = {
-        'request_id': get_request_id()
+    kwargs = {
+        'code': code,
+        'message': message,
     }
-
-    if code is not None:
-        kwargs['code'] = code
-
-    if message is not None:
-        kwargs['message'] = message
 
     if data is not None:
         kwargs['data'] = data
@@ -179,32 +168,15 @@ def _response(
     if extra is not None:
         kwargs['extra'] = extra
 
-    return kwargs
+    return APIResponse(**kwargs)
 
 
 def response_success(
-        message: str | None = None,
-        data: T | None = None
-) -> APIResponse[T]:
-    """返回成功响应
-
-    Args:
-        message: 提示信息
-        data: 响应数据
-
-    Returns:
-        APIResponse[T]
-    """
-    resp_data = _response(code=0, message=message, data=data)
-    return APIResponse(**resp_data)
-
-
-def response_with_extra_success(
-        message: str | None = None,
+        message: str = '操作成功',
         data: T | None = None,
         extra: E | None = None
-) -> APIResponseWithExtra[T, E]:
-    """返回携带扩展数据的成功响应
+) -> APIResponse[T, E]:
+    """返回成功响应快捷方法
 
     Args:
         message: 提示信息
@@ -212,43 +184,24 @@ def response_with_extra_success(
         extra: 扩展数据
 
     Returns:
-        APIResponseWithExtra[T, E]
+        APIResponse[T, E]
     """
-    resp_data = _response(code=0, message=message, data=data, extra=extra)
-    return APIResponseWithExtra(**resp_data)
+    return build_response(message=message, data=data, extra=extra)
 
 
 def response_fail(
         code: int,
-        message: str
-) -> APIResponse[T]:
-    """返回失败响应
-
-    Args:
-        code: 错误码
-        message: 错误信息
-
-    Returns:
-        APIResponse[T]
-    """
-    resp_data = _response(code=code, message=message)
-    return APIResponse(**resp_data)
-
-
-def response_with_extra_fail(
-        code: int,
         message: str,
         extra: E | None = None
-) -> APIResponseWithExtra[T, E]:
-    """返回携带扩展数据的失败响应
+) -> APIResponse[T, E]:
+    """返回失败响应快捷方法
 
     Args:
-        code: 错误码
-        message: 错误信息
+        code: 错误码 (必须非0)
+        message: 错误提示信息
         extra: 扩展数据
 
     Returns:
-        APIResponseWithExtra[T, E]
+        APIResponse[Any, E]
     """
-    resp_data = _response(code=code, message=message, extra=extra)
-    return APIResponseWithExtra(**resp_data)
+    return build_response(code=code, message=message, extra=extra)

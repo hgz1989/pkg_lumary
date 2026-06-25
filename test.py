@@ -5,6 +5,7 @@
 """
 import asyncio
 from datetime import datetime
+from typing import Type, AsyncGenerator, Any
 
 from fastapi import HTTPException, WebSocket, WebSocketDisconnect, Depends
 from pydantic import BaseModel, Field
@@ -12,19 +13,14 @@ from sqlalchemy import String, Integer
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Mapped, mapped_column
 
-from lumary import Lumary, on_startup, on_shutdown
-from lumary.common.cache import cache, cache_response
-from lumary.common.mqtt import mqtt_client
-from lumary.db.sqlalchemy.base import Base
-from lumary.db.sqlalchemy.crud import CRUDBase
-from lumary.db.sqlalchemy.engine import create_db_engine
-from lumary.db.sqlalchemy.session import SessionFactory
+from lumary import Lumary, on_startup, on_shutdown, Response
+from lumary.common import cache, cache_response, mqtt_client
+from lumary.db.sqlalchemy import ModelBase, CRUDBase, create_db_engine, SessionFactory
 from lumary.schemas import (
+    SchemaBase,
     APIResponse,
-    APIResponseWithExtra,
     PageData,
-    response_success,
-    response_with_extra_success
+    response_success
 )
 from lumary.ws.connect_manager import WSConnectionManager
 
@@ -40,7 +36,7 @@ db_engine = create_db_engine("sqlite+aiosqlite:///:memory:")
 session_factory = SessionFactory(db_engine)
 
 
-class DemoUserModel(Base):
+class DemoUserModel(ModelBase):
     """测试用数据库表模型"""
     __tablename__ = "demo_users"
 
@@ -50,12 +46,12 @@ class DemoUserModel(Base):
     age: Mapped[int] = mapped_column(Integer)
 
 
-class DemoUserCreate(BaseModel):
+class DemoUserCreate(SchemaBase):
     username: str
     age: int
 
 
-class DemoUserUpdate(BaseModel):
+class DemoUserUpdate(SchemaBase):
     username: str | None = None
     age: int | None = None
 
@@ -94,7 +90,7 @@ async def setup_all():
     _bg_tasks.append(task)
     # 1. 初始化数据库表结构
     async with db_engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
+        await conn.run_sync(ModelBase.metadata.create_all)
         print("SQLite 内存数据库表创建成功")
 
     # 2. 尝试初始化 Redis 缓存
@@ -130,26 +126,27 @@ async def on_debug_message(topic: str, payload: str):
 # ──────────────────────────────────────────────
 # 路由接口定义 - 基础响应测试
 # ──────────────────────────────────────────────
-class UserOut(BaseModel):
+class UserOut(SchemaBase):
     id: int
     username: str
     created_at: datetime
 
 
-class PaginationExtra(BaseModel):
+class PaginationExtra(SchemaBase):
     has_next: bool
     cursor: str
 
 
-@app.get("/users/standard", summary="1. 标准响应测试", response_model=APIResponse[UserOut])
-async def get_standard_response():
+@app.get("/users/standard", summary="1. 标准响应测试", response_model=APIResponse[UserOut, Any])
+async def get_standard_response(resp: Response):
     """测试不带扩展信息的标准业务响应"""
     user = UserOut(id=1, username="zarkhan", created_at=datetime.now())
+    resp.headers["X-Request-Id"] = "123456789"
     return response_success(message="用户获取成功", data=user)
 
 
 @app.get("/users/extra", summary="2. 带扩展响应测试",
-         response_model=APIResponseWithExtra[PageData[UserOut], PaginationExtra])
+         response_model=APIResponse[PageData[UserOut], PaginationExtra])
 async def get_extra_response():
     """测试带有额外扩展信息的业务响应"""
     users_list = [
@@ -158,18 +155,18 @@ async def get_extra_response():
     ]
     page_data = PageData.build(items=users_list, page=1, size=10, total=2)
     extra_info = PaginationExtra(has_next=False, cursor="eyJpZCI6Mn0=")
-    return response_with_extra_success(message="用户列表获取成功", data=page_data, extra=extra_info)
+    return response_success(message="用户列表获取成功", data=page_data, extra=extra_info)
 
 
 # ──────────────────────────────────────────────
 # 路由接口定义 - 全局异常测试
 # ──────────────────────────────────────────────
-class UserCreate(BaseModel):
-    username: str = Field(..., min_length=3, max_length=20, description="用户名")
+class UserCreate(SchemaBase):
+    username: str = Field( min_length=3, max_length=20, description="用户名")
     age: int = Field(..., ge=0, le=120, description="年龄")
 
 
-@app.post("/errors/validation", summary="3. 参数校验异常测试")
+@app.post("/errors/validation", summary="3. 参数校验异常测试", response_model=APIResponse)
 async def trigger_validation_error(payload: UserCreate):
     """测试 Pydantic 参数校验异常（传入非法参数触发）"""
     return response_success(message="参数校验通过", data=payload)
@@ -179,7 +176,15 @@ async def trigger_validation_error(payload: UserCreate):
 async def trigger_http_error(trigger: bool = True):
     """测试手动抛出 HTTP 异常"""
     if trigger:
-        raise HTTPException(status_code=403, detail="没有权限执行此操作")
+        # 演示抛出带有字典结构的异常，会被框架自动提取为 extra
+        raise HTTPException(
+            status_code=403,
+            detail={
+                "message": "没有权限执行此操作",
+                "need_role": "admin",
+                "retry": False
+            }
+        )
     return response_success(message="正常访问")
 
 
@@ -192,7 +197,7 @@ async def trigger_internal_error():
 # ──────────────────────────────────────────────
 # 路由接口定义 - 缓存测试
 # ──────────────────────────────────────────────
-@app.get("/cache/decorator", summary="6. 装饰器缓存测试", response_model=APIResponse[UserOut])
+@app.get("/cache/decorator", summary="6. 装饰器缓存测试", response_model=APIResponse[UserOut, Type[None]])
 @cache_response(namespace="debug_users", expire=60)
 async def get_cached_user(user_id: int):
     """测试 @cache_response 装饰器 (第二次请求将瞬间返回)"""
@@ -225,7 +230,7 @@ async def publish_mqtt_message(payload: MQTTPayload):
     return response_success(message=f"消息已发送至 {payload.topic}")
 
 
-async def get_db() -> AsyncSession:
+async def get_db() -> AsyncGenerator[AsyncSession, None]:
     async with session_factory.get_session() as db:
         yield db
 
@@ -282,4 +287,4 @@ async def ws_broadcast_message(msg: str = "系统通知"):
 if __name__ == '__main__':
     import uvicorn
 
-    uvicorn.run(app, host='0.0.0.0', port=8080, log_config=None)
+    uvicorn.run(app, host='0.0.0.0', port=8000, log_config=None)

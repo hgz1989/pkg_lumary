@@ -15,11 +15,8 @@ from lumary.schemas import (
     BatchIds,
     PageData,
     APIResponse,
-    APIResponseWithExtra,
     response_success,
-    response_fail,
-    response_with_extra_success,
-    response_with_extra_fail)
+    response_fail)
 
 
 # ──────────────────────────────────────────────
@@ -187,17 +184,19 @@ class TestResponseFunctions:
         with pytest.raises(TypeError):
             response_fail(code=500)
 
-    def test_response_with_extra_success(self):
+    def test_response_success_with_extra(self):
         item = _Item(name='x', value=1)
         extra = _Item(name='e', value=2)
-        resp = response_with_extra_success(data=item, extra=extra)
-        assert isinstance(resp, APIResponseWithExtra)
+        resp = response_success(data=item, extra=extra)
+        assert isinstance(resp, APIResponse)
         assert resp.code == 0
         assert resp.data == item
         assert resp.extra == extra
 
-    def test_response_with_extra_fail(self):
-        resp = response_with_extra_fail(code=400, message='参数错误')
-        assert isinstance(resp, APIResponseWithExtra)
+    def test_response_fail_with_extra(self):
+        extra = _Item(name='e', value=2)
+        resp = response_fail(code=400, message='参数错误', extra=extra)
+        assert isinstance(resp, APIResponse)
         assert resp.code == 400
         assert resp.message == '参数错误'
+        assert resp.extra == extra

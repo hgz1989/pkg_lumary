@@ -152,7 +152,8 @@ _ROTATION_MAP: dict[str, tuple[str, int] | None] = {
     'year': None,  # 自定义处理器
 }
 # 日志格式定义 (增加了时区和线程/进程信息，更利于排查并发问题)
-NORMAL_FORMAT = '%(asctime)s.%(msecs)03d | %(levelname)-8s | %(process)d:%(thread)d | %(request_id)-32.32s | %(name)-30.30s | %(lineno)-4d | %(message)s'
+NORMAL_FORMAT = ('%(asctime)s.%(msecs)03d | %(levelname)-8s | %(process)d:%(thread)-12d | '
+                 '%(name)-30.30s | %(lineno)-5d | %(request_id)-32.32s | %(message)s')
 # 配置日志格式
 logging.basicConfig(level=logging.DEBUG, format=NORMAL_FORMAT, datefmt='%Y-%m-%d %H:%M:%S', force=True)
 

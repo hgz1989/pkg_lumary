@@ -7,18 +7,21 @@ import pytest
 from fastapi import FastAPI, APIRouter
 from fastapi.responses import JSONResponse
 from fastapi.testclient import TestClient
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
+from pydantic.alias_generators import to_pascal
 
 from lumary.routing import WrapAPIRoute
 from lumary.common.context import set_request_id
 
 
 class UserOut(BaseModel):
+    model_config = ConfigDict(alias_generator=to_pascal, populate_by_name=True)
     name: str
     age: int
 
 
 class UserExtra(BaseModel):
+    model_config = ConfigDict(alias_generator=to_pascal, populate_by_name=True)
     role: str
 
 
@@ -57,33 +60,31 @@ def test_normal_data_wrap(client: TestClient):
     response = client.get("/normal-data")
     assert response.status_code == 200
     data = response.json()
-    assert data["code"] == 0
-    assert data["message"] == "操作成功"
-    assert data["data"] == {"name": "张三", "age": 25}
-    assert data["request_id"] == "test-router-id-123"
-    assert "extra" not in data
+
+    assert data["Message"] == "操作成功"
+    assert data["Data"] == {"Name": "张三", "Age": 25}
+    assert data["RequestId"] == "test-router-id-123"
+    assert data["Extra"] is None
 
 
 def test_tuple_data_wrap(client: TestClient):
     response = client.get("/tuple-data")
     assert response.status_code == 200
     data = response.json()
-    assert data["code"] == 0
-    assert data["message"] == "操作成功"
-    assert data["data"] == {"name": "李四", "age": 30}
-    assert data["extra"] == {"role": "admin"}
-    assert data["request_id"] == "test-router-id-123"
+    assert data["Message"] == "操作成功"
+    assert data["Data"] == {"Name": "李四", "Age": 30}
+    assert data["Extra"] == {"Role": "admin"}
+    assert data["RequestId"] == "test-router-id-123"
 
 
 def test_dict_passthrough(client: TestClient):
     response = client.get("/dict-pass")
     assert response.status_code == 200
     data = response.json()
-    assert data["code"] == 0
-    assert data["message"] == "自定义成功"
-    assert data["data"] == {"foo": "bar"}
+    assert data["Message"] == "自定义成功"
+    assert data["Data"] == {"foo": "bar"}
     # 虽然是透传字典，但如果没带request_id，我们在schemas的APIResponse解析时会自动补全
-    assert "request_id" in data
+    assert "RequestId" in data
 
 
 def test_response_passthrough(client: TestClient):
