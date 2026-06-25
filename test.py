@@ -5,7 +5,7 @@
 """
 import asyncio
 from datetime import datetime
-from typing import Type, AsyncGenerator, Literal
+from typing import Type, AsyncGenerator, Any
 
 from fastapi import HTTPException, WebSocket, WebSocketDisconnect, Depends
 from pydantic import BaseModel, Field
@@ -13,14 +13,11 @@ from sqlalchemy import String, Integer
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Mapped, mapped_column
 
-from lumary import Lumary, on_startup, on_shutdown
-from lumary.common.cache import cache, cache_response
-from lumary.common.mqtt import mqtt_client
-from lumary.db.sqlalchemy.base import Base
-from lumary.db.sqlalchemy.crud import CRUDBase
-from lumary.db.sqlalchemy.engine import create_db_engine
-from lumary.db.sqlalchemy.session import SessionFactory
+from lumary import Lumary, on_startup, on_shutdown, Response
+from lumary.common import cache, cache_response, mqtt_client
+from lumary.db.sqlalchemy import ModelBase, CRUDBase, create_db_engine, SessionFactory
 from lumary.schemas import (
+    SchemaBase,
     APIResponse,
     PageData,
     response_success
@@ -39,7 +36,7 @@ db_engine = create_db_engine("sqlite+aiosqlite:///:memory:")
 session_factory = SessionFactory(db_engine)
 
 
-class DemoUserModel(Base):
+class DemoUserModel(ModelBase):
     """测试用数据库表模型"""
     __tablename__ = "demo_users"
 
@@ -49,12 +46,12 @@ class DemoUserModel(Base):
     age: Mapped[int] = mapped_column(Integer)
 
 
-class DemoUserCreate(BaseModel):
+class DemoUserCreate(SchemaBase):
     username: str
     age: int
 
 
-class DemoUserUpdate(BaseModel):
+class DemoUserUpdate(SchemaBase):
     username: str | None = None
     age: int | None = None
 
@@ -93,7 +90,7 @@ async def setup_all():
     _bg_tasks.append(task)
     # 1. 初始化数据库表结构
     async with db_engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
+        await conn.run_sync(ModelBase.metadata.create_all)
         print("SQLite 内存数据库表创建成功")
 
     # 2. 尝试初始化 Redis 缓存
@@ -129,21 +126,22 @@ async def on_debug_message(topic: str, payload: str):
 # ──────────────────────────────────────────────
 # 路由接口定义 - 基础响应测试
 # ──────────────────────────────────────────────
-class UserOut(BaseModel):
+class UserOut(SchemaBase):
     id: int
     username: str
     created_at: datetime
 
 
-class PaginationExtra(BaseModel):
+class PaginationExtra(SchemaBase):
     has_next: bool
     cursor: str
 
 
-@app.get("/users/standard", summary="1. 标准响应测试", response_model=APIResponse[UserOut, Type[None]])
-async def get_standard_response():
+@app.get("/users/standard", summary="1. 标准响应测试", response_model=APIResponse[UserOut, Any])
+async def get_standard_response(resp: Response):
     """测试不带扩展信息的标准业务响应"""
     user = UserOut(id=1, username="zarkhan", created_at=datetime.now())
+    resp.headers["X-Request-Id"] = "123456789"
     return response_success(message="用户获取成功", data=user)
 
 
@@ -163,12 +161,12 @@ async def get_extra_response():
 # ──────────────────────────────────────────────
 # 路由接口定义 - 全局异常测试
 # ──────────────────────────────────────────────
-class UserCreate(BaseModel):
-    username: str = Field(..., min_length=3, max_length=20, description="用户名")
+class UserCreate(SchemaBase):
+    username: str = Field( min_length=3, max_length=20, description="用户名")
     age: int = Field(..., ge=0, le=120, description="年龄")
 
 
-@app.post("/errors/validation", summary="3. 参数校验异常测试")
+@app.post("/errors/validation", summary="3. 参数校验异常测试", response_model=APIResponse)
 async def trigger_validation_error(payload: UserCreate):
     """测试 Pydantic 参数校验异常（传入非法参数触发）"""
     return response_success(message="参数校验通过", data=payload)

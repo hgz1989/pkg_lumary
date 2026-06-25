@@ -2,6 +2,16 @@
 
 本文档用于记录 `lumary` 框架的所有显著变更、新特性以及性能优化。
 
+## [0.2.4] - 2026-06-25
+
+### 🚀 新特性 (Features)
+- **Response Wrapper (路由响应包装)**: `routing.py` 增强，支持路由函数返回长度为 3 的元组 `(data, extra, message)`。框架将自动解析并将其组装为带有自定义提示信息、扩展数据及业务数据的标准 API 响应。
+- **Global Schema Configuration**: 在 `schemas.py` 的全局 `SchemaBase` 中开启了 `alias_generator=to_pascal`。所有继承自该基类的 Pydantic 模型（包括框架自动包装的 `APIResponse`），其序列化输出的 JSON 键名将全局统一采用 **大写驼峰 (PascalCase)** 格式（如 `RequestId`, `Message`, `Data`），高度契合部分企业的前端契约标准。
+
+### 🐛 问题修复 (Bug Fixes)
+- **Global Handlers**: 修复了 `handlers.py` 中由于未正确声明及提取 `HTTPException.headers` 导致的局部变量 `extra` 未绑定错误 (`UnboundLocalError`)。现已将 `exc.headers` 标准转化为 `extra` 返回，并在监控降级日志中安全输出。
+- **Tests Coverage**: 全面修复了单元测试套件（`tests/test_application.py`, `tests/test_router.py`），将其内部所有的断言逻辑从原先的小写蛇形（snake_case）适配为最新的全局 PascalCase 响应规范，恢复 100% 的测试通过率。
+
 ## [0.2.3] - 2026-06-23
 
 ### 🚀 新特性 (Features)

@@ -72,11 +72,10 @@ class TestSystemEndpoints:
 
     def test_health_body(self, client):
         body = client.get('/system/health').json()
-        assert body['code'] == 0
-        assert body['data']['status'] == 'OK'
-        assert body['data']['name'] == 'TestApp'
-        assert body['data']['version'] == '0.0.1'
-        assert body['data']['debug'] is True
+        assert body['Data']['Status'] == 'OK'
+        assert body['Data']['Name'] == 'TestApp'
+        assert body['Data']['Version'] == '0.0.1'
+        assert body['Data']['Debug'] is True
 
     def test_health_has_request_id(self, client):
         headers = client.get('/system/health').headers
@@ -88,12 +87,13 @@ class TestSystemEndpoints:
 
     def test_info_body(self, client):
         body = client.get('/system/info').json()
-        assert body['code'] == 0
-        data = body['data']
-        assert data['name'] == 'TestApp'
-        assert 'routes_count' in data
-        assert 'sub_apps_count' in data
-        assert 'python_version' in data
+        data = body['Data']
+        assert data['Name'] == 'TestApp'
+        assert data['Version'] == '0.0.1'
+        assert data['Debug'] is True
+        assert 'RoutesCount' in data
+        assert 'SubAppsCount' in data
+        assert 'PythonVersion' in data
 
     def test_metrics_200(self, client):
         resp = client.get('/system/metrics')
@@ -101,16 +101,15 @@ class TestSystemEndpoints:
 
     def test_metrics_body(self, client):
         body = client.get('/system/metrics').json()
-        assert body['code'] == 0
-        data = body['data']
-        assert 'uptime_seconds' in data
-        assert data['uptime_seconds'] >= 0
-        assert 'memory_mb' in data
-        assert 'cpu_percent' in data
-        assert 'disk_usage_percent' in data
-        assert 'workers_count' in data
-        assert 'threads_count' in data
-        assert 'tasks_count' in data
+        data = body['Data']
+        assert 'UptimeSeconds' in data
+        assert data['UptimeSeconds'] >= 0
+        assert 'MemoryMb' in data
+        assert 'CpuPercent' in data
+        assert 'DiskUsagePercent' in data
+        assert 'WorkersCount' in data
+        assert 'ThreadsCount' in data
+        assert 'TasksCount' in data
 
     def test_request_id_header_forwarded(self, client):
         """客户端传入X-Request-ID时应原样返回"""

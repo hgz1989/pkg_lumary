@@ -3,11 +3,12 @@
 @CreateDate : 2026/5/14
 @Description: 核心响应与请求数据模型
 """
-from datetime import datetime
+from datetime import datetime, date
 from math import ceil
-from typing import TypeVar, Generic, Sequence, Any, overload
+from typing import TypeVar, Generic, Sequence
 
 from pydantic import BaseModel, ConfigDict, Field
+from pydantic.alias_generators import to_pascal
 
 from .__version__ import __version__ as lumary_version
 from .common import get_request_id
@@ -34,13 +35,14 @@ class SchemaBase(BaseModel):
         # ✅ 4. 允许任意类型（支持泛型绑定ORM模型等）
         arbitrary_types_allowed=True,
 
-        # ✅ 5. 全局配置datetime序列化格式（原生支持，完美兼容OpenAPI）
-        json_encoders={
-            datetime: lambda v: v.strftime('%Y-%m-%d %H:%M:%S')
-        },
+        # ✅ 5. 开启别名生成器（支持驼峰等），如果你项目需要全局驼峰响应
+        alias_generator=to_pascal,
 
-        # ✅ 6. 开启别名生成器（支持驼峰等），如果你项目需要全局驼峰响应
-        # alias_generator=...
+        # ✅ 6. 其他配置...
+        json_encoders={
+            datetime: lambda v: v.isoformat().replace('T', ' '),
+            date: lambda v: v.isoformat(),
+        }
     )
 
 
@@ -111,7 +113,7 @@ class PageData(SchemaBase, Generic[T]):
             page: int,
             size: int,
             total: int
-    ) -> 'PageData[T]':
+    ) -> PageData[T]:
         """根据查询结果构建分页响应
 
         自动计算总页数，避免调用方重复手动计算
@@ -155,7 +157,7 @@ def build_response(
     Returns:
         APIResponse[T, E]
     """
-    kwargs: dict[str, Any] = {
+    kwargs = {
         'code': code,
         'message': message,
     }
@@ -184,14 +186,14 @@ def response_success(
     Returns:
         APIResponse[T, E]
     """
-    return build_response(code=0, message=message, data=data, extra=extra)
+    return build_response(message=message, data=data, extra=extra)
 
 
 def response_fail(
         code: int,
         message: str,
         extra: E | None = None
-) -> APIResponse[Any, E]:
+) -> APIResponse[T, E]:
     """返回失败响应快捷方法
 
     Args:

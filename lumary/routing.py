@@ -66,10 +66,15 @@ def _wrap_endpoint(endpoint: Callable) -> Callable:
         # 使用exact type matching替代isinstance，绕过MRO查找，提升高并发下的纳秒级性能
         raw_type = type(raw_response)
 
-        if raw_type is tuple and len(raw_response) == 2:
-            return response_success(data=raw_response[0], extra=raw_response[1])
+        if raw_type is tuple:
+            length = len(raw_response)
+            if length == 2:
+                return response_success(data=raw_response[0], extra=raw_response[1])
+            elif length == 3:
+                return response_success(data=raw_response[0], extra=raw_response[1], message=raw_response[2])
 
         if raw_type is dict and 'code' in raw_response and 'message' in raw_response:
+            # 如果是字典透传，使用APIResponse解析一下确保格式统一并带上request_id
             return APIResponse(**raw_response)
 
         return response_success(data=raw_response)
@@ -106,8 +111,8 @@ class WrapAPIRoute(APIRoute):
                 if getattr(self.response_model, '__origin__', None) is tuple:
                     type_args = getattr(self.response_model, '__args__', ())
 
-                    if len(type_args) == 2:
-                        data_type, extra_type = type_args
+                    if len(type_args) >= 2:
+                        data_type, extra_type = type_args[0], type_args[1]
                         self.response_model = APIResponse[data_type, extra_type]  # type: ignore
                 else:
                     self.response_model = APIResponse[self.response_model, Any]  # type: ignore

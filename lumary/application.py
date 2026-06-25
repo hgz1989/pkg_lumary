@@ -31,7 +31,6 @@ from .routing import WrapAPIRoute
 from .schemas import (
     APIResponse,
     SystemHealthOut,
-    response_success,
     SystemInfoOut,
     SystemMetricsOut
 )
@@ -192,22 +191,22 @@ class Lumary(FastAPI):
         """注册系统内置接口（健康检查、详细信息、运行指标）"""
         router = APIRouter(prefix='/system', tags=['system'], route_class=WrapAPIRoute)
 
-        @router.get('/health', summary='健康检查')
-        async def health(_request: Request) -> APIResponse[SystemHealthOut, None]:
+        @router.get('/health', summary='健康检查', response_model=APIResponse[SystemHealthOut, Any])
+        async def health(_request: Request) -> tuple[SystemHealthOut, None, str]:
             """服务健康检查
 
             Returns:
                 响应数据
             """
-            data = SystemHealthOut(
+            system_health = SystemHealthOut(
                 name=self.title,
                 version=self.version,
                 debug=self.debug
             )
-            return response_success(data=data, message='服务运行正常')
+            return system_health, None, '服务运行正常'
 
-        @router.get('/info', summary='详细信息')
-        async def info(_request: Request) -> APIResponse[SystemInfoOut, None]:
+        @router.get('/info', summary='详细信息', response_model=APIResponse[SystemInfoOut, Any])
+        async def info(_request: Request) -> tuple[SystemInfoOut, None, str]:
             """查看应用详细信息
 
             Args:
@@ -221,7 +220,7 @@ class Lumary(FastAPI):
                 self._sub_apps_count = sum(1 for r in self.routes if isinstance(r, Mount))
                 self._routes_count = len(self.routes)
 
-            data = SystemInfoOut(
+            system_info = SystemInfoOut(
                 name=self.title,
                 version=self.version,
                 debug=self.debug,
@@ -229,10 +228,10 @@ class Lumary(FastAPI):
                 routes_count=self._routes_count,
                 python_version=sys.version,
             )
-            return response_success(data=data, message='获取成功')
+            return system_info, None, '获取详细信息成功'
 
-        @router.get('/metrics', summary='运行指标')
-        async def metrics(_request: Request) -> APIResponse[SystemMetricsOut, None]:
+        @router.get('/metrics', summary='运行指标', response_model=APIResponse[SystemMetricsOut, Any])
+        async def metrics(_request: Request) -> tuple[SystemMetricsOut, None, str]:
             """查看应用运行指标
 
             Args:
@@ -245,11 +244,11 @@ class Lumary(FastAPI):
             uptime = round(time() - self._start_time, 3)
             metrics_data = get_system_metrics()
 
-            data = SystemMetricsOut(
+            system_metrics = SystemMetricsOut(
                 uptime_seconds=uptime,
                 **metrics_data
             )
-            return response_success(data=data, message='获取成功')
+            return system_metrics, None, '获取运行指标成功'
 
         self.include_router(router)
 
