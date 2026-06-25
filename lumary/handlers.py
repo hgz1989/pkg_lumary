@@ -4,17 +4,15 @@
 @Description: 全局异常处理器
 """
 from functools import cache
-from json import JSONDecodeError
 from logging import getLogger
-from typing import TypeAlias, Any, Callable, Awaitable, Sequence
+from typing import TypeAlias, Any, Callable, Awaitable, Sequence, Mapping
 
 from fastapi import Request, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException
 
-from .common.utils import json_loads
-from .schemas import response_fail, response_with_extra_fail
+from .schemas import response_fail
 
 _logger = getLogger(__name__)
 
@@ -50,29 +48,29 @@ def _is_json_parse_error(errors: Sequence[dict]) -> bool:
 
 
 def _build_json_resp(
+        status_code: int,
         code: int,
         message: str,
-        status_code: int,
-        extra: dict | None = None
+        extra: Any | None = None,
+        headers: Mapping[str, str] | None = None
 ) -> JSONResponse:
     """构建JSON响应
 
     Args:
+        status_code: HTTP状态码
         code: 状态码
         message: 提示信息
-        status_code: HTTP状态码
         extra: 扩展信息
+        headers: 额外的HTTP头
 
     Returns:
         JSON响应
     """
-    if extra:
-        resp_model = response_with_extra_fail(code=code, message=message, extra=extra)
-    else:
-        resp_model = response_fail(code=code, message=message)
+    resp_model = response_fail(code=code, message=message, extra=extra)
     return JSONResponse(
         content=resp_model.model_dump(exclude_none=True),
-        status_code=status_code
+        status_code=status_code,
+        headers=headers
     )
 
 
@@ -91,10 +89,7 @@ def build_exception_handlers() -> ExceptionHandlers:
     """
 
     # ── 第一层：参数校验异常 ──
-    async def validation_exception_handler(
-            _request: Request,
-            exc: RequestValidationError
-    ) -> JSONResponse:
+    async def validation_exception_handler(_request: Request, exc: RequestValidationError) -> JSONResponse:
         """处理Pydantic请求参数校验失败
 
         JSON格式非法 → 返回400；字段校验失败 → 返回422
@@ -108,30 +103,47 @@ def build_exception_handlers() -> ExceptionHandlers:
             JSON解析错误时HTTP 400，字段校验失败时HTTP 422
         """
         errors = exc.errors()
+        extra_data = None
+
         if errors:
             error_parts = []
+            error_details = []
+
             for err in errors:
                 loc = ' -> '.join(str(x) for x in err.get('loc', []))
                 msg = err.get('msg', '')
+                err_type = err.get('type', '')
                 error_parts.append(f'{loc} {msg}' if loc else msg)
+                error_details.append({'loc': loc, 'msg': msg, 'type': err_type})
+
             error_msg = '参数校验失败：' + '；'.join(error_parts)
+            extra_data = {'errors': error_details}
         else:
             error_msg = '参数校验失败'
 
         # JSON格式非法（如 {invalid}）→ 400；字段校验失败 → 422
         if _is_json_parse_error(errors):
             http_status = status.HTTP_400_BAD_REQUEST
-            biz_code = status.HTTP_400_BAD_REQUEST
         else:
             http_status = status.HTTP_422_UNPROCESSABLE_CONTENT
-            biz_code = status.HTTP_422_UNPROCESSABLE_CONTENT
+
+        log_message = (
+            f'Validation Exception: Status Code = {http_status}, Biz Code = {http_status}, '
+            f'Message = {error_msg}, Extra = {extra_data}'
+        )
 
         # 如果是监控探针请求导致的 4xx/5xx，降级为 DEBUG 日志防止刷屏
         if _is_monitor_path(_request.url.path):
-            _logger.debug(f'请求参数校验失败: {error_msg}')
+            _logger.debug(log_message)
         else:
-            _logger.error(f'请求参数校验失败: {error_msg}')
-        return _build_json_resp(code=biz_code, message=error_msg, status_code=http_status)
+            _logger.error(log_message)
+
+        return _build_json_resp(
+            status_code=http_status,
+            code=http_status,
+            message=error_msg,
+            extra=extra_data
+        )
 
     # ── 第二层：所有HTTP协议异常（使用starlette.HTTPException作为基类，确保捕获框架自动抛出的404/405等）──
     async def http_exception_handler(_request: Request, exc: HTTPException) -> JSONResponse:
@@ -150,32 +162,34 @@ def build_exception_handlers() -> ExceptionHandlers:
         status_code = exc.status_code
         detail = exc.detail
         headers = exc.headers
-        fail_kwargs = {}
+        code = status_code
+        message = '请求失败'
         extra = None
 
-        if detail:
-            try:
-                detail_data = json_loads(detail)
-                extra = detail_data.get('extra', {})
-            except JSONDecodeError:
-                fail_kwargs['message'] = str(detail)
+        if isinstance(detail, dict):
+            # 复制字典以防污染原始异常对象
+            detail_data = detail.copy()
+            code = detail_data.pop('code', status_code)
+            message = detail_data.pop('message', None) or detail.pop('msg', '请求失败')
+            extra = detail_data or None
+        elif isinstance(detail, str):
+            message = detail or '请求失败'
+
+        log_message = (
+            f'HTTP Exception: Status Code = {status_code}, Biz Code = {code}, Message = {message}, Extra = {extra}, '
+            f'Headers = {dict(headers) if headers else None}'
+        )
 
         if _is_monitor_path(_request.url.path):
-            _logger.debug(
-                f'HTTP Exception: Status Code = {status_code}, Detail = {exc.detail}, Headers = {dict(headers) if headers else None}')
+            _logger.debug(log_message)
         else:
-            _logger.error(
-                f'HTTP Exception: Status Code = {status_code}, Detail = {exc.detail}, Headers = {dict(headers) if headers else None}')
+            _logger.error(log_message)
 
-        if extra:
-            fail_kwargs['extra'] = extra
-            resp = response_with_extra_fail(**fail_kwargs)
-        else:
-            resp = response_fail(**fail_kwargs)
-
-        return JSONResponse(
-            content=resp.model_dump(exclude_none=True),
+        return _build_json_resp(
             status_code=status_code,
+            code=code,
+            message=message,
+            extra=extra,
             headers=headers
         )
 
@@ -196,13 +210,10 @@ def build_exception_handlers() -> ExceptionHandlers:
             f'系统未捕获异常 类型:{type(exc).__name__} | 详情:{exc}',
             exc_info=True
         )
-        resp = response_fail(
+        return _build_json_resp(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             code=500,
             message='系统内部错误，请联系管理员'
-        )
-        return JSONResponse(
-            content=resp.model_dump(exclude_none=True),
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR
         )
 
     return {
@@ -210,6 +221,3 @@ def build_exception_handlers() -> ExceptionHandlers:
         HTTPException: http_exception_handler,
         Exception: exception_handler
     }
-
-
-ValueError('')

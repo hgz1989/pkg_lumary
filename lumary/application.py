@@ -193,7 +193,7 @@ class Lumary(FastAPI):
         router = APIRouter(prefix='/system', tags=['system'], route_class=WrapAPIRoute)
 
         @router.get('/health', summary='健康检查')
-        async def health(_request: Request) -> APIResponse[SystemHealthOut]:
+        async def health(_request: Request) -> APIResponse[SystemHealthOut, None]:
             """服务健康检查
 
             Returns:
@@ -207,7 +207,7 @@ class Lumary(FastAPI):
             return response_success(data=data, message='服务运行正常')
 
         @router.get('/info', summary='详细信息')
-        async def info(_request: Request) -> APIResponse[SystemInfoOut]:
+        async def info(_request: Request) -> APIResponse[SystemInfoOut, None]:
             """查看应用详细信息
 
             Args:
@@ -232,7 +232,7 @@ class Lumary(FastAPI):
             return response_success(data=data, message='获取成功')
 
         @router.get('/metrics', summary='运行指标')
-        async def metrics(_request: Request) -> APIResponse[SystemMetricsOut]:
+        async def metrics(_request: Request) -> APIResponse[SystemMetricsOut, None]:
             """查看应用运行指标
 
             Args:

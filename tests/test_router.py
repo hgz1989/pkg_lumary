@@ -61,7 +61,7 @@ def test_normal_data_wrap(client: TestClient):
     assert data["message"] == "操作成功"
     assert data["data"] == {"name": "张三", "age": 25}
     assert data["request_id"] == "test-router-id-123"
-    assert "extra" not in data
+    assert data["extra"] is None
 
 
 def test_tuple_data_wrap(client: TestClient):

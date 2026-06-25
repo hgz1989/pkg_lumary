@@ -5,6 +5,7 @@
 """
 import asyncio
 from datetime import datetime
+from typing import Type, AsyncGenerator, Literal
 
 from fastapi import HTTPException, WebSocket, WebSocketDisconnect, Depends
 from pydantic import BaseModel, Field
@@ -21,10 +22,8 @@ from lumary.db.sqlalchemy.engine import create_db_engine
 from lumary.db.sqlalchemy.session import SessionFactory
 from lumary.schemas import (
     APIResponse,
-    APIResponseWithExtra,
     PageData,
-    response_success,
-    response_with_extra_success
+    response_success
 )
 from lumary.ws.connect_manager import WSConnectionManager
 
@@ -141,7 +140,7 @@ class PaginationExtra(BaseModel):
     cursor: str
 
 
-@app.get("/users/standard", summary="1. 标准响应测试", response_model=APIResponse[UserOut])
+@app.get("/users/standard", summary="1. 标准响应测试", response_model=APIResponse[UserOut, Type[None]])
 async def get_standard_response():
     """测试不带扩展信息的标准业务响应"""
     user = UserOut(id=1, username="zarkhan", created_at=datetime.now())
@@ -149,7 +148,7 @@ async def get_standard_response():
 
 
 @app.get("/users/extra", summary="2. 带扩展响应测试",
-         response_model=APIResponseWithExtra[PageData[UserOut], PaginationExtra])
+         response_model=APIResponse[PageData[UserOut], PaginationExtra])
 async def get_extra_response():
     """测试带有额外扩展信息的业务响应"""
     users_list = [
@@ -158,7 +157,7 @@ async def get_extra_response():
     ]
     page_data = PageData.build(items=users_list, page=1, size=10, total=2)
     extra_info = PaginationExtra(has_next=False, cursor="eyJpZCI6Mn0=")
-    return response_with_extra_success(message="用户列表获取成功", data=page_data, extra=extra_info)
+    return response_success(message="用户列表获取成功", data=page_data, extra=extra_info)
 
 
 # ──────────────────────────────────────────────
@@ -179,7 +178,15 @@ async def trigger_validation_error(payload: UserCreate):
 async def trigger_http_error(trigger: bool = True):
     """测试手动抛出 HTTP 异常"""
     if trigger:
-        raise HTTPException(status_code=403, detail="没有权限执行此操作")
+        # 演示抛出带有字典结构的异常，会被框架自动提取为 extra
+        raise HTTPException(
+            status_code=403,
+            detail={
+                "message": "没有权限执行此操作",
+                "need_role": "admin",
+                "retry": False
+            }
+        )
     return response_success(message="正常访问")
 
 
@@ -192,7 +199,7 @@ async def trigger_internal_error():
 # ──────────────────────────────────────────────
 # 路由接口定义 - 缓存测试
 # ──────────────────────────────────────────────
-@app.get("/cache/decorator", summary="6. 装饰器缓存测试", response_model=APIResponse[UserOut])
+@app.get("/cache/decorator", summary="6. 装饰器缓存测试", response_model=APIResponse[UserOut, Type[None]])
 @cache_response(namespace="debug_users", expire=60)
 async def get_cached_user(user_id: int):
     """测试 @cache_response 装饰器 (第二次请求将瞬间返回)"""
@@ -225,7 +232,7 @@ async def publish_mqtt_message(payload: MQTTPayload):
     return response_success(message=f"消息已发送至 {payload.topic}")
 
 
-async def get_db() -> AsyncSession:
+async def get_db() -> AsyncGenerator[AsyncSession, None]:
     async with session_factory.get_session() as db:
         yield db
 
@@ -282,4 +289,4 @@ async def ws_broadcast_message(msg: str = "系统通知"):
 if __name__ == '__main__':
     import uvicorn
 
-    uvicorn.run(app, host='0.0.0.0', port=8080, log_config=None)
+    uvicorn.run(app, host='0.0.0.0', port=8000, log_config=None)
