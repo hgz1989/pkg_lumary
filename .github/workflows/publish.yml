@@ -22,7 +22,6 @@ jobs:
           python-version: "3.11"
           cache: pip
 
-
       - run: pip install --upgrade pip build
       - run: python -m build
 
