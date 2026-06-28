@@ -11,6 +11,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 from ulid import ULID
 from .base import Base
 
+
 def _generate_ulid(_ctx: Any = None) -> str:
     """生成ULID
 
@@ -21,6 +22,7 @@ def _generate_ulid(_ctx: Any = None) -> str:
         ULID字符串
     """
     return str(ULID()).lower()
+
 
 class ModelBase(Base):
     """SQLAlchemy模型基础类
