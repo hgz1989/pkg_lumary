@@ -162,7 +162,7 @@ class Lumary(FastAPI):
         )
 
         # 记录应用启动时间
-        self._start_time: float = time()
+        self._start_time: int | float = time()
         # 缓存 routes 统计，避免每次遍历
         self._sub_apps_count = 0
         self._routes_count = 0
