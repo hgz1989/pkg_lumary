@@ -4,11 +4,16 @@
 @Description: 系统资源指标采集模块（纯标准库、多进程支持）
 """
 import os
+import time
 from asyncio import all_tasks
 from multiprocessing import cpu_count
 from sys import platform
 from threading import active_count
 from typing import Any
+
+from lumary.common.base.singleton import CrossProcessSharedDict
+
+_metrics_cache = CrossProcessSharedDict('system_metrics')
 
 
 def get_app_process_pids() -> list[int]:
@@ -124,9 +129,16 @@ def get_app_process_pids() -> list[int]:
 def get_system_metrics() -> dict[str, Any]:
     """获取系统运行指标，聚合多进程资源
     
+    使用 CrossProcessSharedDict 进行 5 秒缓存，防止并发探测引发系统调用风暴。
+    
     Returns:
         包含内存、CPU、磁盘和进程数量的字典
     """
+    now = time.time()
+    cached = _metrics_cache.get_all()
+    if cached and now - cached.get('_timestamp', 0) < 5:
+        return cached.get('data', {})
+
     pids = get_app_process_pids()
     workers_count = len(pids)
 
@@ -244,7 +256,7 @@ def get_system_metrics() -> dict[str, Any]:
     except RuntimeError:
         tasks_count = 0
 
-    return {
+    result = {
         'memory_mb': round(memory_mb, 2),
         'cpu_percent': cpu_percent,
         'disk_usage_percent': disk_usage_percent,
@@ -252,3 +264,13 @@ def get_system_metrics() -> dict[str, Any]:
         'threads_count': active_count(),
         'tasks_count': tasks_count
     }
+    
+    # 将结果写入缓存
+    try:
+        _metrics_cache.clear()
+        _metrics_cache.set('_timestamp', now)
+        _metrics_cache.set('data', result)
+    except Exception:
+        pass
+        
+    return result

@@ -4,13 +4,20 @@
 @Description: 可选的aiocache缓存管理器与缓存装饰器
 """
 import hashlib
+import json
+import os
 import re
+import tempfile
+import time
 from functools import wraps
 from logging import getLogger
+from pathlib import Path
 from typing import Any, Callable
 
 from fastapi import Request
 from pydantic import BaseModel
+
+from lumary.common.utils.locks import CrossProcessLock
 
 try:
     from aiocache import Cache
@@ -42,6 +49,104 @@ except ImportError:
 
 _logger = getLogger(__name__)
 
+class CrossProcessFileCache:
+    """跨进程文件缓存
+    
+    用于在未配置 Redis 等分布式缓存时，作为 Uvicorn 多 Worker 模式下的默认兜底缓存。
+    基于本地文件系统和跨进程锁实现，保证多进程下的缓存读写一致性。
+    """
+    
+    def __init__(self, namespace: str = 'main'):
+        self.namespace = namespace
+        self.cache_dir = Path(tempfile.gettempdir()) / 'lumary_cache' / namespace
+        self.cache_dir.mkdir(parents=True, exist_ok=True)
+        
+    def _get_path(self, key: str) -> Path:
+        """根据 Key 生成安全的文件路径
+        
+        为了支持按 namespace/prefix 清理，我们将 key 中的 namespace 提取出来作为前缀。
+        典型的 key 格式为 "namespace:hash" 或 "namespace:func_name"
+        """
+        parts = key.split(':', 1)
+        if len(parts) == 2:
+            prefix, actual_key = parts
+        else:
+            prefix, actual_key = "default", key
+            
+        safe_key = hashlib.md5(actual_key.encode('utf-8')).hexdigest()
+        return self.cache_dir / f"{prefix}_{safe_key}.json"
+        
+    async def get(self, key: str, default: Any = None) -> Any:
+        path = self._get_path(key)
+        if not path.exists():
+            return default
+            
+        lock = CrossProcessLock(f"cache_read_{path.name}")
+        try:
+            if lock.acquire(blocking=True):
+                if not path.exists():
+                    return default
+                    
+                with open(path, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+                    
+                # 检查过期
+                if data.get('expire', 0) > 0 and time.time() > data['expire']:
+                    os.remove(path)
+                    return default
+                    
+                return data.get('value', default)
+            return default
+        except Exception:
+            return default
+        finally:
+            lock.release()
+            
+    async def set(self, key: str, value: Any, ttl: int | float | None = None) -> None:
+        path = self._get_path(key)
+        lock = CrossProcessLock(f"cache_write_{path.name}")
+        expire = time.time() + ttl if ttl else 0
+        
+        try:
+            if lock.acquire(blocking=True):
+                with open(path, 'w', encoding='utf-8') as f:
+                    json.dump({'value': value, 'expire': expire}, f, ensure_ascii=False)
+        except Exception:
+            pass
+        finally:
+            lock.release()
+            
+    async def delete(self, key: str) -> None:
+        path = self._get_path(key)
+        lock = CrossProcessLock(f"cache_write_{path.name}")
+        try:
+            if lock.acquire(blocking=True):
+                if path.exists():
+                    os.remove(path)
+        except Exception:
+            pass
+        finally:
+            lock.release()
+            
+    async def clear_namespace(self, prefix: str) -> None:
+        """清除指定前缀的所有缓存"""
+        if not self.cache_dir.exists():
+            return
+            
+        for path in self.cache_dir.glob(f"{prefix}_*.json"):
+            lock = CrossProcessLock(f"cache_write_{path.name}")
+            try:
+                if lock.acquire(blocking=True):
+                    if path.exists():
+                        os.remove(path)
+            except Exception:
+                pass
+            finally:
+                lock.release()
+        
+    async def close(self) -> None:
+        pass
+
 
 class CacheManager:
     """基于aiocache的缓存管理器
@@ -54,9 +159,9 @@ class CacheManager:
 
     def __init__(self):
         """初始化"""
-        self.cache: Cache | None = None
+        self.cache: Cache | CrossProcessFileCache | None = None
         self.enabled: bool = False
-        self.cache_class: int = Cache.MEMORY
+        self.cache_class: int | str = Cache.MEMORY
 
     async def init(self, url: str | None = None) -> None:
         """初始化缓存
@@ -98,9 +203,10 @@ class CacheManager:
                 self.cache = Cache(self.cache_class, endpoint='127.0.0.1', port=11211, namespace='main')
             _logger.info('Memcached缓存连接成功 (aiocache)')
         else:
-            # 默认内存缓存
-            self.cache = Cache(self.cache_class, namespace='main')
-            _logger.info('纯内存缓存初始化成功 (aiocache)')
+            # 默认跨进程文件缓存，取代单进程的 Cache.MEMORY
+            self.cache_class = "FILE"
+            self.cache = CrossProcessFileCache(namespace='main')
+            _logger.info('跨进程文件兜底缓存初始化成功 (FileCache)')
 
         self.enabled = True
 
@@ -194,6 +300,8 @@ class CacheManager:
 
                     if cursor == 0:
                         break
+            elif self.cache_class == "FILE":
+                await cache_client.clear_namespace(namespace)
             elif hasattr(cache_client, '_cache'):
                 # MemoryCache没有原生的前缀删除，遍历内部字典删除
                 keys_to_delete = [k for k in getattr(cache_client, '_cache').keys() if k.startswith(namespace + ':')]

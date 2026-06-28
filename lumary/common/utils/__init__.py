@@ -5,6 +5,7 @@
 """
 from .datetimekit import add_datetime
 from .metrics import get_app_process_pids, get_system_metrics
+from .locks import CrossProcessLock
 from .strings import (
     camel_to_snake,
     snake_to_camel,
@@ -21,5 +22,6 @@ __all__ = [
     'snake_to_camel',
     'random_string',
     'json_dumps',
-    'json_loads'
+    'json_loads',
+    'CrossProcessLock'
 ]
