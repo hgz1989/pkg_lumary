@@ -17,8 +17,7 @@ from starlette.middleware.cors import CORSMiddleware
 from starlette.routing import Mount
 
 from .__version__ import __version__ as lumary_version
-from .common import set_log_level
-from .common.utils import get_system_metrics
+from .common import set_log_level, get_system_metrics
 from .handlers import build_exception_handlers
 from .lifespan import (
     HookRegistry,

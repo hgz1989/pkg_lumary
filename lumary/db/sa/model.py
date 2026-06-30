@@ -4,12 +4,24 @@
 @Description: SQLAlchemy ORM基础模型
 """
 from datetime import datetime
+from typing import Any
 
 from sqlalchemy import String, func, DateTime
 from sqlalchemy.orm import Mapped, mapped_column
 from ulid import ULID
-
 from .base import Base
+
+
+def _generate_ulid(_ctx: Any = None) -> str:
+    """生成ULID
+
+    Args:
+        _ctx: 上下文
+
+    Returns:
+        ULID字符串
+    """
+    return str(ULID()).lower()
 
 
 class ModelBase(Base):
@@ -21,7 +33,7 @@ class ModelBase(Base):
 
     id: Mapped[str] = mapped_column(
         String(26),
-        default=lambda ctx=None: str(ULID()).lower(),
+        default=_generate_ulid,
         primary_key=True,
         comment='主键ID',
         sort_order=-10000

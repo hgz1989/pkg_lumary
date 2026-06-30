@@ -8,7 +8,7 @@ from inspect import iscoroutinefunction
 from logging import getLogger
 from typing import Any, Callable
 
-from lumary.common.utils import json_dumps
+from .utils import CrossProcessLock, json_dumps
 
 try:
     import paho.mqtt.client as mqtt
@@ -59,7 +59,8 @@ class MQTTManager:
     利用 paho-mqtt 自带的网络循环线程，结合 asyncio.run_coroutine_threadsafe 桥接 FastAPI 异步循环
     如果未安装paho-mqtt库，则默认所有操作静默失效，保证业务安全降级
     """
-    __slots__ = ('client', 'handlers', 'enabled', '_fastapi_loop')
+    __slots__ = ('client', 'handlers', 'enabled', '_fastapi_loop', '_leader_lock', '_is_leader',
+                 '_subscribe_in_leader_only')
 
     def __init__(self) -> None:
         """初始化"""
@@ -67,6 +68,9 @@ class MQTTManager:
         self.handlers: dict[str, list[Callable]] = {}
         self.enabled: bool = False
         self._fastapi_loop: asyncio.AbstractEventLoop | None = None
+        self._leader_lock = CrossProcessLock('lumary_mqtt_leader')
+        self._is_leader = False
+        self._subscribe_in_leader_only = False
 
     def on_message(self, topic: str) -> Callable:
         """MQTT消息处理装饰器
@@ -103,6 +107,7 @@ class MQTTManager:
             client_id: str | None = None,
             username: str | None = None,
             password: str | None = None,
+            subscribe_in_leader_only: bool = False,
             **kwargs: Any
     ) -> None:
         """初始化并连接MQTT服务器
@@ -115,10 +120,19 @@ class MQTTManager:
             client_id: 客户端ID
             username: 用户名
             password: 密码
+            subscribe_in_leader_only: 是否仅在主导进程中订阅主题（防止多进程重复消费）
             **kwargs: 传递给 mqtt.Client 的其他参数
         """
         if not MQTT_INSTALLED:
             raise RuntimeError('未安装paho-mqtt依赖，无法启动MQTT！请使用pip install lumary[mqtt] 安装')
+
+        self._subscribe_in_leader_only = subscribe_in_leader_only
+        if subscribe_in_leader_only:
+            self._is_leader = self._leader_lock.acquire(blocking=False)
+            if self._is_leader:
+                _logger.info('当前进程已获取MQTT主导进程(Leader)锁，将执行全局唯一订阅')
+            else:
+                _logger.info('当前进程为非主导进程，将仅连接MQTT不订阅主题')
 
         # 捕获 FastAPI 主线程的 event_loop，用于后续从 paho 线程中分发异步任务
         self._fastapi_loop = asyncio.get_running_loop()
@@ -166,11 +180,14 @@ class MQTTManager:
         # paho-mqtt v2 返回的是 ReasonCode 对象，可以直接判断 is_failure
         is_fail = getattr(rc, 'is_failure', rc != 0)
         if not is_fail:
-            _logger.info('MQTT客户端连接成功')
-            # 连接成功后，自动订阅所有已注册的主题
-            for topic in self.handlers:
-                client.subscribe(topic)
-                _logger.info(f'MQTT已自动订阅主题: {topic}')
+            # 连接成功后，自动订阅所有已注册的主题（若开启了 subscribe_in_leader_only，则仅 leader 进程订阅）
+            if not self._subscribe_in_leader_only or self._is_leader:
+                _logger.info('MQTT客户端连接成功')
+                for topic in self.handlers:
+                    client.subscribe(topic)
+                    _logger.info(f'MQTT已自动订阅主题: {topic}')
+            else:
+                _logger.debug('当前为非主导进程，跳过MQTT主题订阅')
         else:
             _logger.error(f'MQTT连接被拒绝，返回码: {rc}')
 
@@ -260,6 +277,10 @@ class MQTTManager:
             self.client.loop_stop()
             self.client.disconnect()
             _logger.info('MQTT客户端已安全关闭')
+
+        if self._is_leader:
+            self._leader_lock.release()
+            self._is_leader = False
 
 
 # 全局单例

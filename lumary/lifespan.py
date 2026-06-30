@@ -18,6 +18,8 @@ from typing import (
 
 from fastapi import FastAPI
 
+from .common.utils.locks import CrossProcessLock
+
 _logger = getLogger(__name__)
 
 
@@ -47,6 +49,7 @@ class _HookItem:
     abort_on_exception: bool
     needs_app: bool  # 是否需要注入FastAPI实例（注册时缓存签名结果）
     timeout: int | float | None = None  # 单个钩子执行超时（秒），None表示不限制
+    run_in_leader_only: bool = False  # 是否仅在主导进程(Leader)中执行
 
     def __eq__(self, other: object) -> bool:
         """重写等于判断逻辑，用于去重
@@ -92,7 +95,7 @@ class HookRegistry:
             await create_engine()
     """
 
-    __slots__ = ('_startup_hooks', '_shutdown_hooks', '_startup_seen', '_shutdown_seen')
+    __slots__ = ('_startup_hooks', '_shutdown_hooks', '_startup_seen', '_shutdown_seen', '_leader_lock', '_is_leader')
 
     def __init__(self):
         """初始化"""
@@ -100,13 +103,16 @@ class HookRegistry:
         self._shutdown_hooks: list[_HookItem] = []
         self._startup_seen: set[_HookItem] = set()
         self._shutdown_seen: set[_HookItem] = set()
+        self._leader_lock = CrossProcessLock('lumary_hook_leader')
+        self._is_leader = False
 
     def register_startup(
             self,
             func: HookFunc,
             priority: int,
             abort_on_exception: bool,
-            timeout: int | float | None = None
+            timeout: int | float | None = None,
+            run_in_leader_only: bool = False
     ) -> None:
         """将启动钩子注册到列表中
 
@@ -118,6 +124,7 @@ class HookRegistry:
             priority: 执行优先级
             abort_on_exception: 异常时是否抛出RuntimeError终止启动
             timeout: 单个钩子执行超时（秒），None表示不限制
+            run_in_leader_only: 是否仅在主导进程中执行
         """
         try:
             sig = signature(func)
@@ -125,7 +132,7 @@ class HookRegistry:
         except ValueError:
             needs_app = False
 
-        item = _HookItem(func, priority, abort_on_exception, needs_app, timeout)
+        item = _HookItem(func, priority, abort_on_exception, needs_app, timeout, run_in_leader_only)
         if item not in self._startup_seen:
             self._startup_seen.add(item)
             self._startup_hooks.append(item)
@@ -136,7 +143,8 @@ class HookRegistry:
             func: HookFunc,
             priority: int,
             abort_on_exception: bool,
-            timeout: int | float | None = None
+            timeout: int | float | None = None,
+            run_in_leader_only: bool = False
     ) -> None:
         """将关闭钩子注册到列表中
 
@@ -148,6 +156,7 @@ class HookRegistry:
             priority: 执行优先级
             abort_on_exception: 异常时是否抛出RuntimeError
             timeout: 单个钩子执行超时（秒），None表示不限制
+            run_in_leader_only: 是否仅在主导进程中执行
         """
         try:
             sig = signature(func)
@@ -155,7 +164,7 @@ class HookRegistry:
         except ValueError:
             needs_app = False
 
-        item = _HookItem(func, priority, abort_on_exception, needs_app, timeout)
+        item = _HookItem(func, priority, abort_on_exception, needs_app, timeout, run_in_leader_only)
         if item not in self._shutdown_seen:
             self._shutdown_seen.add(item)
             self._shutdown_hooks.append(item)
@@ -167,6 +176,12 @@ class HookRegistry:
         Args:
             app: 当前FastAPI应用实例
         """
+        # 尝试获取主导进程锁
+        if any(h.run_in_leader_only for h in self._startup_hooks):
+            self._is_leader = self._leader_lock.acquire(blocking=False)
+            if self._is_leader:
+                _logger.info('当前进程已获取主导进程(Leader)锁，将执行全局单例钩子')
+
         hooks_count = len(self._startup_hooks)
         if hooks_count > 0:
             _logger.info(f'正在执行 {hooks_count} 个启动钩子...')
@@ -184,9 +199,12 @@ class HookRegistry:
             _logger.info(f'正在执行 {hooks_count} 个关闭钩子...')
             await self._run_hooks(self._shutdown_hooks, app)
             _logger.info('关闭钩子执行完成')
+            
+        if self._is_leader:
+            self._leader_lock.release()
+            self._is_leader = False
 
-    @staticmethod
-    async def _run_hooks(hooks: list[_HookItem], app: FastAPI) -> None:
+    async def _run_hooks(self, hooks: list[_HookItem], app: FastAPI) -> None:
         """按序执行给定的生命周期钩子列表
 
         根据注册时缓存的签名结果决定是否注入FastAPI应用实例
@@ -201,6 +219,10 @@ class HookRegistry:
         """
         for item in hooks:
             name = item.func.__name__
+            if item.run_in_leader_only and not self._is_leader:
+                _logger.debug(f'[跳过钩子] {name}: 仅主导进程可执行')
+                continue
+                
             try:
                 coro = item.func(app) if item.needs_app else item.func()
                 if item.timeout is not None:
@@ -276,7 +298,8 @@ class HookRegistry:
             *,
             priority: int = 50,
             abort_on_exception: bool = True,
-            timeout: int | float | None = None
+            timeout: int | float | None = None,
+            run_in_leader_only: bool = False
     ) -> Callable[[HookFunc], HookFunc]:
         """注册服务启动(Startup)生命周期钩子的装饰器（实例级）
 
@@ -284,6 +307,7 @@ class HookRegistry:
             priority: 优先级 (默认50)。值越大，越早被执行
             abort_on_exception: 如果执行报错是否抛出异常阻止启动 (默认True)
             timeout: 钩子执行超时（秒），None表示不限制 (默认None)
+            run_in_leader_only: 是否仅在主导进程中执行 (默认False)
 
         Returns:
             挂载的装饰器函数
@@ -296,7 +320,8 @@ class HookRegistry:
             *,
             priority: int = 50,
             abort_on_exception: bool = True,
-            timeout: int | float | None = None
+            timeout: int | float | None = None,
+            run_in_leader_only: bool = False
     ) -> Callable[[HookFunc], HookFunc] | HookFunc:
         """注册服务启动(Startup)生命周期钩子的装饰器（实例级）
 
@@ -305,6 +330,7 @@ class HookRegistry:
             priority: 优先级 (默认50)。值越大，越早被执行
             abort_on_exception: 如果执行报错是否抛出异常阻止启动 (默认True)
             timeout: 钩子执行超时（秒），None表示不限制 (默认None)
+            run_in_leader_only: 是否仅在主导进程中执行 (默认False)
         """
 
         def decorator(fn: HookFunc) -> HookFunc:
@@ -316,7 +342,7 @@ class HookRegistry:
             Returns:
                 原封不动返回被装饰的函数
             """
-            self.register_startup(fn, priority, abort_on_exception, timeout)
+            self.register_startup(fn, priority, abort_on_exception, timeout, run_in_leader_only)
             return fn
 
         return decorator(func) if func else decorator
@@ -339,7 +365,8 @@ class HookRegistry:
             *,
             priority: int = 50,
             abort_on_exception: bool = False,
-            timeout: int | float | None = None
+            timeout: int | float | None = None,
+            run_in_leader_only: bool = False
     ) -> Callable[[HookFunc], HookFunc] | HookFunc:
         """注册服务关闭(Shutdown)生命周期钩子的装饰器（实例级）
 
@@ -347,6 +374,7 @@ class HookRegistry:
             priority: 优先级 (默认50)
             abort_on_exception: 报错时是否抛出异常 (默认False)
             timeout: 钩子执行超时（秒），None表示不限制 (默认None)
+            run_in_leader_only: 是否仅在主导进程中执行 (默认False)
 
         Returns:
             挂载的装饰器函数
@@ -359,7 +387,8 @@ class HookRegistry:
             *,
             priority: int = 50,
             abort_on_exception: bool = False,
-            timeout: int | float | None = None
+            timeout: int | float | None = None,
+            run_in_leader_only: bool = False
     ) -> Callable[[HookFunc], HookFunc] | HookFunc:
         """注册服务关闭(Shutdown)生命周期钩子的装饰器（实例级）
 
@@ -368,6 +397,7 @@ class HookRegistry:
             priority: 优先级 (默认50)
             abort_on_exception: 报错时是否抛出异常 (默认False)
             timeout: 钩子执行超时（秒），None表示不限制 (默认None)
+            run_in_leader_only: 是否仅在主导进程中执行 (默认False)
         """
 
         def decorator(fn: HookFunc) -> HookFunc:
@@ -379,7 +409,7 @@ class HookRegistry:
             Returns:
                 原封不动返回被装饰的函数
             """
-            self.register_shutdown(fn, priority, abort_on_exception, timeout)
+            self.register_shutdown(fn, priority, abort_on_exception, timeout, run_in_leader_only)
             return fn
 
         return decorator(func) if func else decorator
@@ -429,7 +459,8 @@ def on_startup(
         *,
         priority: int = 50,
         abort_on_exception: bool = True,
-        timeout: int | float | None = None
+        timeout: int | float | None = None,
+        run_in_leader_only: bool = False
 ) -> Callable[[HookFunc], HookFunc] | HookFunc:
     """注册服务启动(Startup)生命周期钩子的装饰器
 
@@ -440,6 +471,7 @@ def on_startup(
         priority: 优先级 (默认50)。值越大，越早被执行
         abort_on_exception: 如果执行报错是否抛出异常阻止启动 (默认True)
         timeout: 钩子执行超时（秒），None表示不限制 (默认None)
+        run_in_leader_only: 是否仅在主导进程中执行 (默认False)
 
     Returns:
         挂载的装饰器函数
@@ -451,7 +483,8 @@ def on_startup(
         func: HookFunc | None = None,
         *, priority: int = 50,
         abort_on_exception: bool = True,
-        timeout: int | float | None = None
+        timeout: int | float | None = None,
+        run_in_leader_only: bool = False
 ) -> Callable[[HookFunc], HookFunc] | HookFunc:
     """注册服务启动(Startup)生命周期钩子的装饰器
 
@@ -463,6 +496,7 @@ def on_startup(
         priority: 优先级 (默认50)。值越大，越早被执行
         abort_on_exception: 如果执行报错是否抛出异常阻止启动 (默认True)
         timeout: 钩子执行超时（秒），None表示不限制 (默认None)
+        run_in_leader_only: 是否仅在主导进程中执行 (默认False)
 
     Examples:
         @on_startup(priority=100)
@@ -483,7 +517,7 @@ def on_startup(
         Returns:
             原封不动返回被装饰的函数
         """
-        default_registry.register_startup(fn, priority, abort_on_exception, timeout)
+        default_registry.register_startup(fn, priority, abort_on_exception, timeout, run_in_leader_only)
         return fn
 
     return decorator(func) if func else decorator
@@ -507,7 +541,8 @@ def on_shutdown(
         *,
         priority: int = 50,
         abort_on_exception: bool = False,
-        timeout: int | float | None = None
+        timeout: int | float | None = None,
+        run_in_leader_only: bool = False
 ) -> Callable[[HookFunc], HookFunc] | HookFunc:
     """注册服务关闭(Shutdown)生命周期钩子的装饰器
 
@@ -515,6 +550,7 @@ def on_shutdown(
         priority: 优先级 (默认50)。启动时优先级越大的，关闭时优先级也应设为越大，它会越晚被清理
         abort_on_exception: 报错时是否抛出异常 (默认False。关闭通常不应因局部报错而中断全局清理)
         timeout: 钩子执行超时（秒），None表示不限制 (默认None)
+        run_in_leader_only: 是否仅在主导进程中执行 (默认False)
 
     Returns:
         挂载的装饰器函数
@@ -527,7 +563,8 @@ def on_shutdown(
         *,
         priority: int = 50,
         abort_on_exception: bool = False,
-        timeout: int | float | None = None
+        timeout: int | float | None = None,
+        run_in_leader_only: bool = False
 ) -> Callable[[HookFunc], HookFunc] | HookFunc:
     """注册服务关闭(Shutdown)生命周期钩子的装饰器
 
@@ -540,6 +577,7 @@ def on_shutdown(
         priority: 优先级 (默认50)。启动时优先级越大的，关闭时优先级也应设为越大，它会越晚被清理
         abort_on_exception: 报错时是否抛出异常 (默认False。关闭通常不应因局部报错而中断全局清理)
         timeout: 钩子执行超时（秒），None表示不限制 (默认None)
+        run_in_leader_only: 是否仅在主导进程中执行 (默认False)
 
     Examples:
         @on_shutdown
@@ -556,7 +594,7 @@ def on_shutdown(
         Returns:
             原封不动返回被装饰的函数
         """
-        default_registry.register_shutdown(fn, priority, abort_on_exception, timeout)
+        default_registry.register_shutdown(fn, priority, abort_on_exception, timeout, run_in_leader_only)
         return fn
 
     return decorator(func) if func else decorator

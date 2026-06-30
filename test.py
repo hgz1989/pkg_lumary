@@ -82,27 +82,41 @@ async def cpu_burner():
 _bg_tasks = []
 
 
-@on_startup
-async def setup_all():
-    """统一的启动事件处理"""
-    # 启动后台 CPU 占用任务
+@on_startup(run_in_leader_only=True)
+async def setup_global_tasks():
+    """全局单例启动事件（仅在 Leader 进程中执行一次）"""
+    # 1. 启动后台 CPU 占用任务（作为定时任务/后台常驻任务的演示）
     task = asyncio.create_task(cpu_burner())
     _bg_tasks.append(task)
-    # 1. 初始化数据库表结构
+    
+    # 2. 初始化数据库表结构（DDL 操作，全局仅需执行一次）
     async with db_engine.begin() as conn:
         await conn.run_sync(ModelBase.metadata.create_all)
-        print("SQLite 内存数据库表创建成功")
+        print("SQLite 内存数据库表创建成功 (仅 Leader 执行)")
 
-    # 2. 尝试初始化 Redis 缓存
+
+@on_startup
+async def setup_worker_resources():
+    """工作进程资源初始化（在每个 Worker 进程中都会执行）"""
+    # 1. 尝试初始化 Redis 缓存
     try:
         # 使用纯内存缓存，确保无 Redis 依赖也能极速响应
+        # 为什么缓存不能加 run_in_leader_only？
+        # 因为每个 Worker 进程内存是隔离的，每个进程都需要维护自己的缓存连接对象或本地内存字典！
         await cache.init(None)
     except Exception as e:
         print(f"Redis 缓存未启动或未安装，已自动降级为内存模式: {e}")
 
-    # 3. 尝试初始化 MQTT 客户端
+    # 2. 尝试初始化 MQTT 客户端
     try:
-        await mqtt_client.init("broker.emqx.io", port=1883, client_id=f"lumary_debug_{datetime.now().timestamp()}")
+        # 注意：mqtt 初始化必须在所有进程执行，以保证每个进程都能发送消息 (Publish)
+        # 但是我们通过 subscribe_in_leader_only=True 控制了仅 Leader 进程订阅 (Subscribe)
+        await mqtt_client.init(
+            "broker.emqx.io", 
+            port=1883, 
+            client_id=f"lumary_debug_{datetime.now().timestamp()}",
+            subscribe_in_leader_only=True
+        )
     except Exception as e:
         print(f"MQTT 客户端未启动或未安装，已自动降级: {e}")
 

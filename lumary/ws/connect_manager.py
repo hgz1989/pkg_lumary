@@ -80,7 +80,8 @@ class WSConnectionManager:
 
     __slots__ = (
         '_connections', '_groups', '_metadata', '_last_seen',
-        '_redis', '_pubsub', '_listen_task', '_instance_id', '_redis_channel'
+        '_redis', '_pubsub', '_listen_task', '_instance_id', '_redis_channel',
+        '_mqtt_client', '_mqtt_topic'
     )
 
     def __init__(self):
@@ -96,6 +97,10 @@ class WSConnectionManager:
         self._listen_task: asyncio.Task | None = None
         self._instance_id: str = str(uuid4())
         self._redis_channel: str = 'lumary_ws_broadcast'
+        
+        # MQTT Pub/Sub相关
+        self._mqtt_client: Any = None
+        self._mqtt_topic: str = 'lumary/ws/broadcast'
 
     async def init_redis(self, url: str, channel: str = 'lumary_ws_broadcast') -> None:
         """初始化Redis并启动订阅监听（支持跨实例广播）
@@ -117,6 +122,42 @@ class WSConnectionManager:
 
         self._listen_task = asyncio.create_task(self._listen_redis())
         _logger.info(f'WebSocket Redis分布式广播已启用，监听通道: {self._redis_channel}')
+
+    async def init_mqtt(self, mqtt_client_instance: Any, topic: str = 'lumary/ws/broadcast') -> None:
+        """初始化MQTT并启动订阅监听（支持跨实例广播）
+        
+        Args:
+            mqtt_client_instance: 已实例化的 MQTTManager 对象
+            topic: 广播通道名称
+        """
+        self._mqtt_client = mqtt_client_instance
+        self._mqtt_topic = topic
+        
+        # 注册 MQTT 消息处理函数
+        @mqtt_client_instance.on_message(topic)
+        async def handle_ws_broadcast(msg_topic: str, payload: str) -> None:
+            try:
+                data = json_loads(payload)
+                sender_id = data.get('sender_id')
+
+                # 忽略自己发出的广播消息
+                if sender_id == self._instance_id:
+                    return
+
+                msg_type = data.get('type')
+                content = data.get('content')
+                group = data.get('group')
+                exclude = set(data.get('exclude') or [])
+
+                if msg_type == 'text':
+                    await self._local_broadcast_text(content, group=group, exclude=exclude)
+                elif msg_type == 'json':
+                    await self._local_broadcast_json(content, group=group, exclude=exclude)
+
+            except Exception as e:
+                _logger.error(f'处理MQTT订阅消息失败: {e}')
+                
+        _logger.info(f'WebSocket MQTT分布式广播已启用，监听通道: {self._mqtt_topic}')
 
     async def close_redis(self) -> None:
         """关闭Redis连接及监听任务"""
@@ -347,7 +388,7 @@ class WSConnectionManager:
             group: str | None = None,
             exclude: set[str] | None = None
     ) -> None:
-        """广播文本消息（如果有Redis则跨实例广播，否则仅本地广播）
+        """广播文本消息（如果有Redis或MQTT则跨实例广播，否则仅本地广播）
 
         Args:
             message: 文本消息
@@ -357,6 +398,8 @@ class WSConnectionManager:
         # 1. 本地广播
         await self._local_broadcast_text(message, group=group, exclude=exclude)
 
+        payload = None
+        
         # 2. Redis跨实例广播
         if self._redis:
             payload = {
@@ -370,6 +413,21 @@ class WSConnectionManager:
                 await self._redis.publish(self._redis_channel, json_dumps(payload))
             except Exception as e:
                 _logger.error(f'Redis发布文本广播失败: {e}')
+                
+        # 3. MQTT跨实例广播
+        if self._mqtt_client and getattr(self._mqtt_client, 'enabled', False):
+            if not payload:
+                payload = {
+                    'sender_id': self._instance_id,
+                    'type': 'text',
+                    'content': message,
+                    'group': group,
+                    'exclude': list(exclude) if exclude else []
+                }
+            try:
+                await self._mqtt_client.publish(self._mqtt_topic, json_dumps(payload))
+            except Exception as e:
+                _logger.error(f'MQTT发布文本广播失败: {e}')
 
     async def broadcast_json(
             self,
@@ -378,7 +436,7 @@ class WSConnectionManager:
             group: str | None = None,
             exclude: set[str] | None = None
     ) -> None:
-        """广播JSON数据（如果有Redis则跨实例广播，否则仅本地广播）
+        """广播JSON数据（如果有Redis或MQTT则跨实例广播，否则仅本地广播）
 
         Args:
             data: 可序列化为JSON的数据
@@ -387,6 +445,8 @@ class WSConnectionManager:
         """
         # 1. 本地广播
         await self._local_broadcast_json(data, group=group, exclude=exclude)
+
+        payload = None
 
         # 2. Redis跨实例广播
         if self._redis:
@@ -401,6 +461,21 @@ class WSConnectionManager:
                 await self._redis.publish(self._redis_channel, json_dumps(payload))
             except Exception as e:
                 _logger.error(f'Redis发布JSON广播失败: {e}')
+                
+        # 3. MQTT跨实例广播
+        if self._mqtt_client and getattr(self._mqtt_client, 'enabled', False):
+            if not payload:
+                payload = {
+                    'sender_id': self._instance_id,
+                    'type': 'json',
+                    'content': data,
+                    'group': group,
+                    'exclude': list(exclude) if exclude else []
+                }
+            try:
+                await self._mqtt_client.publish(self._mqtt_topic, json_dumps(payload))
+            except Exception as e:
+                _logger.error(f'MQTT发布JSON广播失败: {e}')
 
     async def _local_broadcast_text(self, message: str, *, group: str | None = None,
                                     exclude: set[str] | None = None) -> None:
