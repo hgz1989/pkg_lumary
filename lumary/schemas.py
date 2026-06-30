@@ -10,7 +10,6 @@ from typing import TypeVar, Generic, Sequence
 from pydantic import BaseModel, ConfigDict, Field
 from pydantic.alias_generators import to_pascal
 
-from .__version__ import __version__ as lumary_version
 from .common import get_request_id
 
 T = TypeVar('T')
@@ -66,35 +65,6 @@ class KeywordParams(SchemaBase):
 class BatchIds(SchemaBase):
     """通用批量操作参数（如批量删除/更新）"""
     ids: list[int] | list[str] = Field(description='ID列表', min_length=1)
-
-
-class SystemHealthOut(SchemaBase):
-    """系统健康检查输出"""
-    status: str = Field(default='OK', description='系统状态')
-    name: str = Field(default='Lumary', description='系统名称')
-    version: str = Field(default=lumary_version, description='系统版本')
-    debug: bool = Field(default=False, description='是否处于调试模式')
-
-
-class SystemInfoOut(SchemaBase):
-    """系统详细信息输出"""
-    name: str = Field(description='系统名称')
-    version: str = Field(description='系统版本')
-    debug: bool = Field(description='是否处于调试模式')
-    routes_count: int = Field(description='已注册路由数量')
-    sub_apps_count: int = Field(description='已挂载子应用数量')
-    python_version: str = Field(description='Python运行时版本')
-
-
-class SystemMetricsOut(SchemaBase):
-    """系统运行指标输出"""
-    uptime_seconds: float = Field(description='应用运行时长（秒）')
-    memory_mb: float = Field(description='进程组总内存占用（MB）')
-    cpu_percent: float = Field(description='进程组CPU总使用率（%）')
-    disk_usage_percent: float = Field(description='系统磁盘使用率（%）')
-    workers_count: int = Field(description='当前工作进程数量')
-    threads_count: int = Field(description='当前活动线程数量')
-    tasks_count: int = Field(description='当前异步任务数量')
 
 
 class PageData(SchemaBase, Generic[T]):
