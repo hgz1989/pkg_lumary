@@ -3,17 +3,14 @@
 @CreateDate : 2026/6/17
 @Description: setup_logger / 日志轮转Handler单元测试
 """
-import json
 import logging
-import re
 from datetime import datetime
 from logging.handlers import TimedRotatingFileHandler
 from pathlib import Path
-from unittest.mock import patch
 
 import pytest
 
-from lumary.common.logger import (
+from lumary.logger import (
     _MonthlyRotatingFileHandler,
     _YearlyRotatingFileHandler,
     _ROTATION_MAP,

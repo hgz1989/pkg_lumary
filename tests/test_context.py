@@ -6,7 +6,7 @@
 import asyncio
 import pytest
 
-from lumary.common.context import (
+from lumary.middleware import (
     generate_request_id,
     set_request_id,
     get_request_id,

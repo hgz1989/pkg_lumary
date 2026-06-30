@@ -4,15 +4,13 @@
 @Description: 日志配置与管理
 """
 import logging
-import os
 import sys
 from datetime import datetime
 from logging.handlers import TimedRotatingFileHandler
 from pathlib import Path
 from typing import Any
 
-from .context import get_request_id
-from .utils.locks import CrossProcessLock
+from .middleware import get_request_id
 
 # -------------------------------------
 # 全局注入request_id到日志记录
@@ -73,9 +71,9 @@ for logger_name in only_takeover:
     if logger_name in ('uvicorn.error', 'uvicorn.access'):
         logger.addFilter(UvicornNameRewriteFilter())
 
-logging.getLogger('asyncio').setLevel(logging.WARNING)
-logging.getLogger('httpx').setLevel(logging.WARNING)
-logging.getLogger('urllib3').setLevel(logging.WARNING)
+# logging.getLogger('asyncio').setLevel(logging.WARNING)
+# logging.getLogger('httpx').setLevel(logging.WARNING)
+# logging.getLogger('urllib3').setLevel(logging.WARNING)
 
 
 # -------------------------------------
@@ -85,15 +83,10 @@ class MultiProcessTimedRotatingFileHandler(TimedRotatingFileHandler):
     """支持多进程安全的按时间轮转处理器"""
 
     def doRollover(self) -> None:
-        """执行轮转，增加跨进程锁避免冲突"""
-        lock_name = f"log_rollover_{Path(self.baseFilename).name}"
-        lock = CrossProcessLock(lock_name)
-        if lock.acquire(blocking=False):
-            try:
-                super().doRollover()
-            finally:
-                lock.release()
-        else:
+        """执行轮转"""
+        try:
+            super().doRollover()
+        except PermissionError:
             # 没抢到锁，说明其他进程正在轮转，等待对方完成即可
             # 我们直接重新打开新的文件流即可
             if self.stream:
@@ -128,10 +121,7 @@ class _MonthlyRotatingFileHandler(MultiProcessTimedRotatingFileHandler):
         dt = datetime.fromtimestamp(current_time)
 
         # 下月第一天的零点
-        if dt.month == 12:
-            next_month = datetime(dt.year + 1, 1, 1)
-        else:
-            next_month = datetime(dt.year, dt.month + 1, 1)
+        next_month = datetime(dt.year + 1, 1, 1) if dt.month == 12 else datetime(dt.year, dt.month + 1, 1)
 
         return next_month.timestamp()
 

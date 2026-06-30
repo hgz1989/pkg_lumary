@@ -9,11 +9,9 @@ from contextvars import ContextVar
 from inspect import signature
 from typing import (
     TypeVar,
-    Generator,
-    Any,
-    Callable,
-    AsyncGenerator
+    Any
 )
+from collections.abc import Generator, Callable, AsyncGenerator
 
 from fastapi import Depends
 from sqlalchemy.ext.asyncio import (
@@ -22,7 +20,7 @@ from sqlalchemy.ext.asyncio import (
     AsyncSession
 )
 from sqlalchemy.orm import Session, Mapper
-from sqlalchemy.sql.elements import ClauseElement
+from sqlalchemy.sql import ClauseElement
 
 T = TypeVar('T')
 
@@ -78,12 +76,24 @@ class RoutingSession(Session):
 class SessionFactory:
     """数据库会话管理（支持读写分离主从架构）"""
 
-    def __init__(self, engine: AsyncEngine, replica_engines: list[AsyncEngine] | None = None):
+    def __init__(self, engine: AsyncEngine | None = None, replica_engines: list[AsyncEngine] | None = None):
         """初始化
 
         Args:
-            engine: 主库异步引擎对象
+            engine: 主库异步引擎对象（可为空，支持通过 init 延迟初始化）
             replica_engines: 可选的从库异步引擎列表
+        """
+        self.engine: AsyncEngine | None = None
+        self.replica_engines: list[AsyncEngine] = []
+        self.session_factory: async_sessionmaker[AsyncSession] | None = None
+        
+        if engine is not None:
+            self.init(engine, replica_engines)
+
+    def init(self, engine: AsyncEngine, replica_engines: list[AsyncEngine] | None = None) -> None:
+        """延迟初始化引擎和会话工厂
+        
+        用于在生命周期钩子中初始化数据库连接
         """
         self.engine = engine
         self.replica_engines = replica_engines or []
@@ -167,6 +177,9 @@ class SessionFactory:
         Returns:
             数据库异步会话对象
         """
+        if self.session_factory is None:
+            raise RuntimeError("数据库引擎未初始化，请在系统启动时调用 SessionFactory.init(engine)")
+
         async with self.session_factory() as session:
             try:
                 yield session

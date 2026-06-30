@@ -11,10 +11,9 @@ from logging import getLogger
 from typing import (
     runtime_checkable,
     Protocol,
-    Callable,
-    AsyncGenerator,
     overload
 )
+from collections.abc import Callable, AsyncGenerator
 
 from fastapi import FastAPI
 
@@ -373,7 +372,7 @@ class HookRegistry:
                     await asyncio.wait_for(coro, timeout=item.timeout)
                 else:
                     await coro
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 _logger.error(
                     f'[生命周期钩子执行超时] {name}: 超过 {item.timeout}s'
                 )

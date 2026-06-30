@@ -5,12 +5,13 @@
 """
 from datetime import datetime, date
 from math import ceil
-from typing import TypeVar, Generic, Sequence
+from typing import TypeVar, Generic
+from collections.abc import Sequence
 
 from pydantic import BaseModel, ConfigDict, Field
 from pydantic.alias_generators import to_pascal
 
-from .common import get_request_id
+from .middleware import get_request_id
 
 T = TypeVar('T')
 E = TypeVar('E')  # 扩展结构体
@@ -161,7 +162,7 @@ def response_success(
 
 def response_fail(
         code: int,
-        message: str,
+        message: str = '操作失败',
         extra: E | None = None
 ) -> APIResponse[T, E]:
     """返回失败响应快捷方法

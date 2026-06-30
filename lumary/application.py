@@ -8,7 +8,8 @@ from importlib import import_module
 from logging import getLogger
 from pathlib import Path
 from time import time
-from typing import Any, Self, AsyncGenerator
+from typing import Any, Self
+from collections.abc import AsyncGenerator
 
 from fastapi import FastAPI
 from starlette.middleware import Middleware
@@ -16,13 +17,13 @@ from starlette.middleware.cors import CORSMiddleware
 from starlette.routing import Mount
 
 from .__version__ import __version__ as lumary_version
-from .common import set_log_level
 from .handlers import build_exception_handlers
 from .lifespan import (
     HookRegistry,
     default_registry,
     fastapi_lifespan
 )
+from .logger import set_log_level
 from .middleware import RequestIdMiddleware
 from .openapi import configure_openapi_schema
 
@@ -85,14 +86,13 @@ class Lumary(FastAPI):
         else:
             self._hook_registry = HookRegistry() if is_sub_app else default_registry
 
-        # 如果是子应用
-        if self.is_sub_app:
+        if self.is_sub_app and 'root_path' in kwargs:
             # 清空子应用根路径
-            if 'root_path' in kwargs:
-                old_root = kwargs.pop('root_path')
-                _logger.info(
-                    f'子应用 [{title}] 传入了 root_path="{old_root}"，为防止路由冲突已被自动清除。请通过主应用的 mount_sub_apps 统一管控路径'
-                )
+            old_root = kwargs.pop('root_path')
+            _logger.info(
+                f'子应用 [{title}] 传入了 root_path="{old_root}"，为防止路由冲突已被自动清除。'
+                f'请通过主应用的 mount_sub_apps 统一管控路径'
+            )
 
         # 默认中间件
         middlewares = []

@@ -6,7 +6,7 @@
 import pytest
 from pydantic import ValidationError
 
-from lumary.common.context import set_request_id
+from lumary.middleware import set_request_id
 from lumary.schemas import (
     SchemaBase,
     PageParams,
