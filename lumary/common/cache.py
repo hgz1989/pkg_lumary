@@ -4,7 +4,6 @@
 @Description: 可选的aiocache缓存管理器与缓存装饰器
 """
 import hashlib
-import json
 import os
 import re
 import tempfile
@@ -12,12 +11,13 @@ import time
 from functools import wraps
 from logging import getLogger
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
+from collections.abc import Callable
 
 from fastapi import Request
 from pydantic import BaseModel
 
-from lumary.common.utils.locks import CrossProcessLock
+from .utils import json_dump, json_load
 
 try:
     from aiocache import Cache
@@ -49,11 +49,11 @@ except ImportError:
 
 _logger = getLogger(__name__)
 
-class CrossProcessFileCache:
-    """跨进程文件缓存
+class FileCache:
+    """多进程兜底文件缓存
     
     用于在未配置 Redis 等分布式缓存时，作为 Uvicorn 多 Worker 模式下的默认兜底缓存。
-    基于本地文件系统和跨进程锁实现，保证多进程下的缓存读写一致性。
+    基于本地文件系统实现，无锁化保证高并发性能。
     """
     
     def __init__(self, namespace: str = 'main'):
@@ -81,52 +81,36 @@ class CrossProcessFileCache:
         if not path.exists():
             return default
             
-        lock = CrossProcessLock(f"cache_read_{path.name}")
         try:
-            if lock.acquire(blocking=True):
-                if not path.exists():
-                    return default
-                    
-                with open(path, 'r', encoding='utf-8') as f:
-                    data = json.load(f)
-                    
-                # 检查过期
-                if data.get('expire', 0) > 0 and time.time() > data['expire']:
-                    os.remove(path)
-                    return default
-                    
-                return data.get('value', default)
-            return default
+            with open(path, encoding='utf-8') as f:
+                data = json_load(f)
+                
+            # 检查过期
+            if data.get('expire', 0) > 0 and time.time() > data['expire']:
+                os.remove(path)
+                return default
+                
+            return data.get('value', default)
         except Exception:
             return default
-        finally:
-            lock.release()
             
     async def set(self, key: str, value: Any, ttl: int | float | None = None) -> None:
         path = self._get_path(key)
-        lock = CrossProcessLock(f"cache_write_{path.name}")
         expire = time.time() + ttl if ttl else 0
         
         try:
-            if lock.acquire(blocking=True):
-                with open(path, 'w', encoding='utf-8') as f:
-                    json.dump({'value': value, 'expire': expire}, f, ensure_ascii=False)
+            with open(path, 'w', encoding='utf-8') as f:
+                json_dump({'value': value, 'expire': expire}, f)
         except Exception:
             pass
-        finally:
-            lock.release()
             
     async def delete(self, key: str) -> None:
         path = self._get_path(key)
-        lock = CrossProcessLock(f"cache_write_{path.name}")
         try:
-            if lock.acquire(blocking=True):
-                if path.exists():
-                    os.remove(path)
+            if path.exists():
+                os.remove(path)
         except Exception:
             pass
-        finally:
-            lock.release()
             
     async def clear_namespace(self, prefix: str) -> None:
         """清除指定前缀的所有缓存"""
@@ -134,15 +118,11 @@ class CrossProcessFileCache:
             return
             
         for path in self.cache_dir.glob(f"{prefix}_*.json"):
-            lock = CrossProcessLock(f"cache_write_{path.name}")
             try:
-                if lock.acquire(blocking=True):
-                    if path.exists():
-                        os.remove(path)
+                if path.exists():
+                    os.remove(path)
             except Exception:
                 pass
-            finally:
-                lock.release()
         
     async def close(self) -> None:
         pass
@@ -159,7 +139,7 @@ class CacheManager:
 
     def __init__(self):
         """初始化"""
-        self.cache: Cache | CrossProcessFileCache | None = None
+        self.cache: Cache | FileCache | None = None
         self.enabled: bool = False
         self.cache_class: int | str = Cache.MEMORY
 
@@ -203,10 +183,10 @@ class CacheManager:
                 self.cache = Cache(self.cache_class, endpoint='127.0.0.1', port=11211, namespace='main')
             _logger.info('Memcached缓存连接成功 (aiocache)')
         else:
-            # 默认跨进程文件缓存，取代单进程的 Cache.MEMORY
+            # 默认多进程兜底文件缓存
             self.cache_class = "FILE"
-            self.cache = CrossProcessFileCache(namespace='main')
-            _logger.info('跨进程文件兜底缓存初始化成功 (FileCache)')
+            self.cache = FileCache(namespace='main')
+            _logger.info('多进程兜底文件缓存初始化成功 (FileCache)')
 
         self.enabled = True
 
@@ -304,7 +284,7 @@ class CacheManager:
                 await cache_client.clear_namespace(namespace)
             elif hasattr(cache_client, '_cache'):
                 # MemoryCache没有原生的前缀删除，遍历内部字典删除
-                keys_to_delete = [k for k in getattr(cache_client, '_cache').keys() if k.startswith(namespace + ':')]
+                keys_to_delete = [k for k in cache_client._cache if k.startswith(namespace + ':')]
                 for k in keys_to_delete:
                     await cache_client.delete(k)
         except Exception as e:
@@ -387,9 +367,7 @@ def cache_response(namespace: str, expire: int = 3600) -> Callable:
             # 解析数据用于缓存（支持Pydantic BaseModel）
             to_cache = response
 
-            if hasattr(response, 'model_dump'):
-                to_cache = response.model_dump(mode='json')
-            elif isinstance(response, BaseModel):
+            if hasattr(response, 'model_dump') or isinstance(response, BaseModel):
                 to_cache = response.model_dump(mode='json')
 
             # 仅当可序列化时才进行缓存写入

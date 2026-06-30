@@ -9,12 +9,12 @@ from sqlalchemy import String
 from lumary.exceptions import NotFoundError, BadRequestError, ConflictError
 from sqlalchemy.orm import Mapped, mapped_column
 
-from lumary.db.sqlalchemy.base import Base
-from lumary.db.sqlalchemy.crud import CRUDBase
-from lumary.db.sqlalchemy.engine import create_db_engine
-from lumary.db.sqlalchemy.model import ModelBase
-from lumary.db.sqlalchemy.session import SessionFactory
-from lumary.common.mixins.sqlalchemy import SoftDeleteMixin
+from lumary.db.sa.base import Base
+from lumary.db.sa.crud import CRUDBase
+from lumary.db.sa.engine import create_db_engine
+from lumary.db.sa.model import ModelBase
+from lumary.db.sa.session import SessionFactory
+from lumary.db.sa.mixins import SoftDeleteMixin
 
 
 # ──────────────────────────────────────────────

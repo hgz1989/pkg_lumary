@@ -8,12 +8,13 @@ import time
 from asyncio import gather
 from contextlib import asynccontextmanager
 from logging import getLogger
-from typing import Any, AsyncGenerator
+from typing import Any
+from collections.abc import AsyncGenerator
 from uuid import uuid4
 
 from fastapi import WebSocket
 
-from lumary.common.utils.strings import json_loads, json_dumps
+from ..common.utils import json_loads, json_dumps
 
 try:
     import redis.asyncio as aioredis
@@ -22,7 +23,7 @@ try:
     REDIS_INSTALLED = True
 except ImportError:
     REDIS_INSTALLED = False
-    aioredis = Any  # type: ignore
+    aioredis: Any = None  # type: ignore
 
 
     class Redis:  # type: ignore
@@ -97,7 +98,7 @@ class WSConnectionManager:
         self._listen_task: asyncio.Task | None = None
         self._instance_id: str = str(uuid4())
         self._redis_channel: str = 'lumary_ws_broadcast'
-        
+
         # MQTT Pub/Sub相关
         self._mqtt_client: Any = None
         self._mqtt_topic: str = 'lumary/ws/broadcast'
@@ -132,7 +133,7 @@ class WSConnectionManager:
         """
         self._mqtt_client = mqtt_client_instance
         self._mqtt_topic = topic
-        
+
         # 注册 MQTT 消息处理函数
         @mqtt_client_instance.on_message(topic)
         async def handle_ws_broadcast(msg_topic: str, payload: str) -> None:
@@ -156,7 +157,7 @@ class WSConnectionManager:
 
             except Exception as e:
                 _logger.error(f'处理MQTT订阅消息失败: {e}')
-                
+
         _logger.info(f'WebSocket MQTT分布式广播已启用，监听通道: {self._mqtt_topic}')
 
     async def close_redis(self) -> None:
@@ -399,7 +400,7 @@ class WSConnectionManager:
         await self._local_broadcast_text(message, group=group, exclude=exclude)
 
         payload = None
-        
+
         # 2. Redis跨实例广播
         if self._redis:
             payload = {
@@ -413,7 +414,7 @@ class WSConnectionManager:
                 await self._redis.publish(self._redis_channel, json_dumps(payload))
             except Exception as e:
                 _logger.error(f'Redis发布文本广播失败: {e}')
-                
+
         # 3. MQTT跨实例广播
         if self._mqtt_client and getattr(self._mqtt_client, 'enabled', False):
             if not payload:
@@ -461,7 +462,7 @@ class WSConnectionManager:
                 await self._redis.publish(self._redis_channel, json_dumps(payload))
             except Exception as e:
                 _logger.error(f'Redis发布JSON广播失败: {e}')
-                
+
         # 3. MQTT跨实例广播
         if self._mqtt_client and getattr(self._mqtt_client, 'enabled', False):
             if not payload:

@@ -7,9 +7,9 @@ import pytest
 from sqlalchemy import String, inspect as sa_inspect
 from sqlalchemy.orm import Mapped, mapped_column
 
-from lumary.db.sqlalchemy.base import Base
-from lumary.db.sqlalchemy.model import ModelBase
-from lumary.common.mixins.sqlalchemy import SoftDeleteMixin, AuditMixin
+from lumary.db.sa.base import Base
+from lumary.db.sa.model import ModelBase
+from lumary.db.sa.mixins import SoftDeleteMixin, AuditMixin
 
 
 # ──────────────────────────────────────────────

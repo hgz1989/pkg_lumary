@@ -3,8 +3,8 @@
 @CreateDate : 2026/5/18
 @Description: 基础类
 """
-from .singleton import Singleton, ProcessLocalSingleton, CrossProcessSharedDict
+from .singleton import ProcessLocalSingleton
 
-__all__ = ['Singleton', 'ProcessLocalSingleton', 'CrossProcessSharedDict']
+__all__ = ['ProcessLocalSingleton']
 
 

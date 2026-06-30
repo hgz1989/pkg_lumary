@@ -7,8 +7,8 @@ import pytest
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from lumary.db.sqlalchemy.engine import create_db_engine
-from lumary.db.sqlalchemy.session import SessionFactory
+from lumary.db.sa.engine import create_db_engine
+from lumary.db.sa.session import SessionFactory
 
 
 # ──────────────────────────────────────────────

@@ -5,34 +5,14 @@
 """
 from importlib.util import find_spec
 
-from .context import (
-    request_id_ctx_var,
-    generate_request_id,
-    set_request_id,
-    get_request_id
-)
-from .logger import set_log_level, set_log_format, setup_logger
-
-__all__ = [
-    'request_id_ctx_var',
-    'generate_request_id',
-    'set_request_id',
-    'get_request_id',
-    'set_log_level',
-    'set_log_format',
-    'setup_logger',
-    'CacheManager',
-    'cache',
-    'cache_response',
-    'CrossProcessFileCache'
-]
+__all__ = []
 
 if find_spec('aiocache') is not None:
-    from .cache import CacheManager, cache, cache_response, CrossProcessFileCache
+    from .cache import CacheManager, cache, cache_response, FileCache
+
+    __all__.extend(['CacheManager', 'cache', 'cache_response', 'FileCache'])
 
 if find_spec('paho') is not None:
     from .mqtt import topic_matches, MQTTManager, mqtt_client
 
-    __all__.append('topic_matches')
-    __all__.append('MQTTManager')
-    __all__.append('mqtt_client')
+    __all__.extend(['topic_matches', 'MQTTManager', 'mqtt_client'])

@@ -3,12 +3,17 @@
 @CreateDate : 2026/6/21
 @Description: 可选的MQTT客户端与路由管理器(基于paho-mqtt)
 """
-import asyncio
+from asyncio import (
+    AbstractEventLoop,
+    get_running_loop,
+    run_coroutine_threadsafe
+)
 from inspect import iscoroutinefunction
 from logging import getLogger
-from typing import Any, Callable
+from typing import Any
+from collections.abc import Callable
 
-from .utils import CrossProcessLock, json_dumps
+from .utils import json_dumps
 
 try:
     import paho.mqtt.client as mqtt
@@ -59,18 +64,15 @@ class MQTTManager:
     利用 paho-mqtt 自带的网络循环线程，结合 asyncio.run_coroutine_threadsafe 桥接 FastAPI 异步循环
     如果未安装paho-mqtt库，则默认所有操作静默失效，保证业务安全降级
     """
-    __slots__ = ('client', 'handlers', 'enabled', '_fastapi_loop', '_leader_lock', '_is_leader',
-                 '_subscribe_in_leader_only')
+    __slots__ = ('client', 'handlers', 'enabled', '_fastapi_loop', '_is_leader')
 
     def __init__(self) -> None:
         """初始化"""
         self.client: mqtt.Client | None = None
         self.handlers: dict[str, list[Callable]] = {}
         self.enabled: bool = False
-        self._fastapi_loop: asyncio.AbstractEventLoop | None = None
-        self._leader_lock = CrossProcessLock('lumary_mqtt_leader')
-        self._is_leader = False
-        self._subscribe_in_leader_only = False
+        self._fastapi_loop: AbstractEventLoop | None = None
+        self._is_leader = True
 
     def on_message(self, topic: str) -> Callable:
         """MQTT消息处理装饰器
@@ -107,7 +109,7 @@ class MQTTManager:
             client_id: str | None = None,
             username: str | None = None,
             password: str | None = None,
-            subscribe_in_leader_only: bool = False,
+            is_leader: bool = True,
             **kwargs: Any
     ) -> None:
         """初始化并连接MQTT服务器
@@ -120,22 +122,20 @@ class MQTTManager:
             client_id: 客户端ID
             username: 用户名
             password: 密码
-            subscribe_in_leader_only: 是否仅在主导进程中订阅主题（防止多进程重复消费）
+            is_leader: 当前进程是否为负责订阅的主导进程（默认为True，多进程部署时应由外部传入False控制不订阅）
             **kwargs: 传递给 mqtt.Client 的其他参数
         """
         if not MQTT_INSTALLED:
             raise RuntimeError('未安装paho-mqtt依赖，无法启动MQTT！请使用pip install lumary[mqtt] 安装')
 
-        self._subscribe_in_leader_only = subscribe_in_leader_only
-        if subscribe_in_leader_only:
-            self._is_leader = self._leader_lock.acquire(blocking=False)
-            if self._is_leader:
-                _logger.info('当前进程已获取MQTT主导进程(Leader)锁，将执行全局唯一订阅')
-            else:
-                _logger.info('当前进程为非主导进程，将仅连接MQTT不订阅主题')
+        self._is_leader = is_leader
+        if is_leader:
+            _logger.info('当前进程已获取MQTT订阅权限(is_leader=True)，将执行订阅')
+        else:
+            _logger.info('当前进程无MQTT订阅权限(is_leader=False)，将仅连接MQTT不订阅主题')
 
         # 捕获 FastAPI 主线程的 event_loop，用于后续从 paho 线程中分发异步任务
-        self._fastapi_loop = asyncio.get_running_loop()
+        self._fastapi_loop = get_running_loop()
 
         # paho-mqtt v2 回调版本要求
         client_kwargs: dict[str, Any] = {'client_id': client_id} if client_id else {}
@@ -180,8 +180,8 @@ class MQTTManager:
         # paho-mqtt v2 返回的是 ReasonCode 对象，可以直接判断 is_failure
         is_fail = getattr(rc, 'is_failure', rc != 0)
         if not is_fail:
-            # 连接成功后，自动订阅所有已注册的主题（若开启了 subscribe_in_leader_only，则仅 leader 进程订阅）
-            if not self._subscribe_in_leader_only or self._is_leader:
+            # 连接成功后，若拥有 is_leader 权限，则自动订阅所有已注册的主题
+            if self._is_leader:
                 _logger.info('MQTT客户端连接成功')
                 for topic in self.handlers:
                     client.subscribe(topic)
@@ -240,7 +240,7 @@ class MQTTManager:
             try:
                 # 判断是否是异步函数 (使用 inspect.iscoroutinefunction 替代 asyncio.iscoroutinefunction 避免未来版本弃用)
                 if iscoroutinefunction(func):
-                    asyncio.run_coroutine_threadsafe(func(topic, payload), self._fastapi_loop)
+                    run_coroutine_threadsafe(func(topic, payload), self._fastapi_loop)
                 else:
                     # 同步函数直接在当前线程执行（或者考虑投入线程池以防阻塞 paho 循环）
                     self._fastapi_loop.call_soon_threadsafe(func, topic, payload)
@@ -277,10 +277,6 @@ class MQTTManager:
             self.client.loop_stop()
             self.client.disconnect()
             _logger.info('MQTT客户端已安全关闭')
-
-        if self._is_leader:
-            self._leader_lock.release()
-            self._is_leader = False
 
 
 # 全局单例

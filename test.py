@@ -5,7 +5,7 @@
 """
 import asyncio
 from datetime import datetime
-from typing import Type, AsyncGenerator, Any
+from typing import AsyncGenerator, Any
 
 from fastapi import HTTPException, WebSocket, WebSocketDisconnect, Depends
 from pydantic import BaseModel, Field
@@ -13,9 +13,9 @@ from sqlalchemy import String, Integer
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Mapped, mapped_column
 
-from lumary import Lumary, on_startup, on_shutdown, Response
+from lumary import Lumary, on_startup, on_shutdown, Response, APIResponse
 from lumary.common import cache, cache_response, mqtt_client
-from lumary.db.sqlalchemy import ModelBase, CRUDBase, create_db_engine, SessionFactory
+from lumary.db.sa import ModelBase, CRUDBase, create_db_engine, SessionFactory
 from lumary.schemas import (
     SchemaBase,
     APIResponse,
@@ -82,41 +82,21 @@ async def cpu_burner():
 _bg_tasks = []
 
 
-@on_startup(run_in_leader_only=True)
+@on_startup
 async def setup_global_tasks():
-    """全局单例启动事件（仅在 Leader 进程中执行一次）"""
+    """全局启动事件"""
     # 1. 启动后台 CPU 占用任务（作为定时任务/后台常驻任务的演示）
     task = asyncio.create_task(cpu_burner())
     _bg_tasks.append(task)
-    
-    # 2. 初始化数据库表结构（DDL 操作，全局仅需执行一次）
+
+    # 2. 初始化数据库表结构（DDL 操作）
     async with db_engine.begin() as conn:
         await conn.run_sync(ModelBase.metadata.create_all)
-        print("SQLite 内存数据库表创建成功 (仅 Leader 执行)")
+        print("SQLite 内存数据库表创建成功")
 
-
-@on_startup
-async def setup_worker_resources():
-    """工作进程资源初始化（在每个 Worker 进程中都会执行）"""
-    # 1. 尝试初始化 Redis 缓存
+    # 3. 尝试初始化 MQTT 客户端
     try:
-        # 使用纯内存缓存，确保无 Redis 依赖也能极速响应
-        # 为什么缓存不能加 run_in_leader_only？
-        # 因为每个 Worker 进程内存是隔离的，每个进程都需要维护自己的缓存连接对象或本地内存字典！
-        await cache.init(None)
-    except Exception as e:
-        print(f"Redis 缓存未启动或未安装，已自动降级为内存模式: {e}")
-
-    # 2. 尝试初始化 MQTT 客户端
-    try:
-        # 注意：mqtt 初始化必须在所有进程执行，以保证每个进程都能发送消息 (Publish)
-        # 但是我们通过 subscribe_in_leader_only=True 控制了仅 Leader 进程订阅 (Subscribe)
-        await mqtt_client.init(
-            "broker.emqx.io", 
-            port=1883, 
-            client_id=f"lumary_debug_{datetime.now().timestamp()}",
-            subscribe_in_leader_only=True
-        )
+        await mqtt_client.init("broker.emqx.io", port=1883, client_id=f"lumary_debug_{datetime.now().timestamp()}")
     except Exception as e:
         print(f"MQTT 客户端未启动或未安装，已自动降级: {e}")
 
@@ -151,17 +131,16 @@ class PaginationExtra(SchemaBase):
     cursor: str
 
 
-@app.get("/users/standard", summary="1. 标准响应测试", response_model=APIResponse[UserOut, Any])
-async def get_standard_response(resp: Response):
+@app.get("/users/standard", summary="1. 标准响应测试")
+async def get_standard_response(resp: Response) -> APIResponse[UserOut, None]:
     """测试不带扩展信息的标准业务响应"""
     user = UserOut(id=1, username="zarkhan", created_at=datetime.now())
     resp.headers["X-Request-Id"] = "123456789"
     return response_success(message="用户获取成功", data=user)
 
 
-@app.get("/users/extra", summary="2. 带扩展响应测试",
-         response_model=APIResponse[PageData[UserOut], PaginationExtra])
-async def get_extra_response():
+@app.get("/users/extra", summary="2. 带扩展响应测试")
+async def get_extra_response() -> APIResponse[PageData[UserOut], PaginationExtra]:
     """测试带有额外扩展信息的业务响应"""
     users_list = [
         UserOut(id=1, username="user1", created_at=datetime.now()),
@@ -176,12 +155,12 @@ async def get_extra_response():
 # 路由接口定义 - 全局异常测试
 # ──────────────────────────────────────────────
 class UserCreate(SchemaBase):
-    username: str = Field( min_length=3, max_length=20, description="用户名")
+    username: str = Field(min_length=3, max_length=20, description="用户名")
     age: int = Field(..., ge=0, le=120, description="年龄")
 
 
-@app.post("/errors/validation", summary="3. 参数校验异常测试", response_model=APIResponse)
-async def trigger_validation_error(payload: UserCreate):
+@app.post("/errors/validation", summary="3. 参数校验异常测试")
+async def trigger_validation_error(payload: UserCreate) -> APIResponse[UserCreate, None]:
     """测试 Pydantic 参数校验异常（传入非法参数触发）"""
     return response_success(message="参数校验通过", data=payload)
 
@@ -211,9 +190,9 @@ async def trigger_internal_error():
 # ──────────────────────────────────────────────
 # 路由接口定义 - 缓存测试
 # ──────────────────────────────────────────────
-@app.get("/cache/decorator", summary="6. 装饰器缓存测试", response_model=APIResponse[UserOut, Type[None]])
+@app.get("/cache/decorator", summary="6. 装饰器缓存测试")
 @cache_response(namespace="debug_users", expire=60)
-async def get_cached_user(user_id: int):
+async def get_cached_user(user_id: int) -> APIResponse[UserOut, None]:
     """测试 @cache_response 装饰器 (第二次请求将瞬间返回)"""
     await asyncio.sleep(2)
     user = UserOut(id=user_id, username=f"cached_user_{user_id}", created_at=datetime.now())

@@ -6,7 +6,7 @@
 import pytest
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from lumary.db.sqlalchemy.engine import (
+from lumary.db.sa.engine import (
     ASYNC_DRIVERS,
     _is_async_driver,
     _connect_args_from_url,
