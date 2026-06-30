@@ -3,13 +3,10 @@
 @CreateDate : 2026/5/14
 @Description: OpenAPI文档自定义配置
 """
-from logging import getLogger
 from typing import Any
 
 from fastapi import FastAPI
 from fastapi.openapi.utils import get_openapi
-
-_logger = getLogger(__name__)
 
 
 def configure_openapi_schema(app: FastAPI) -> None:
@@ -18,7 +15,6 @@ def configure_openapi_schema(app: FastAPI) -> None:
     Args:
         app: FastAPI实例对象
     """
-    _logger.debug(f'[{app.title}] 配置自定义OpenAPI Schema...')
 
     def custom_openapi() -> dict[str, Any] | None:
         """自定义OpenAPI Schema
@@ -29,7 +25,7 @@ def configure_openapi_schema(app: FastAPI) -> None:
         # 如果 OpenAPI 被显式禁用 (通常在生产环境 debug=False 时)
         if app.openapi_url is None:
             return None
-            
+
         if app.openapi_schema:
             return app.openapi_schema
 
