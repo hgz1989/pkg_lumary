@@ -49,3 +49,13 @@ class ModelBase(Base):
         onupdate=func.now(),
         comment='更新时间'
     )
+    created_by: Mapped[str | None] = mapped_column(
+        String(64),
+        nullable=True,
+        comment='创建人'
+    )
+    updated_by: Mapped[str | None] = mapped_column(
+        String(64),
+        nullable=True,
+        comment='最后修改人'
+    )

@@ -8,7 +8,6 @@ from importlib.util import find_spec
 __all__ = []
 
 if find_spec('sqlalchemy') is not None:
-    from .sa import SoftDeleteMixin, AuditMixin
+    from .sa import SoftDeleteMixin
 
     __all__.append('SoftDeleteMixin')
-    __all__.append('AuditMixin')
