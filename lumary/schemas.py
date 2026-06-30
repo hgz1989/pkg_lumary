@@ -113,7 +113,7 @@ class PageData(SchemaBase, Generic[T]):
             page: int,
             size: int,
             total: int
-    ) -> PageData[T]:
+    ) -> 'PageData[T]':
         """根据查询结果构建分页响应
 
         自动计算总页数，避免调用方重复手动计算

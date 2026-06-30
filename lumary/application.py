@@ -299,7 +299,6 @@ class Lumary(FastAPI):
 
         apps_folder_name = apps_path.name
 
-        _logger.info('开始挂载子应用')
         success_mounted_list = []
 
         # 遍历目录并强制按名称排序，保证每次启动子应用的挂载顺序一致
@@ -323,6 +322,7 @@ class Lumary(FastAPI):
 
             # 如果导入成功 → 挂载子应用
             if app is not None:
+                _logger.info(f'开始挂载子应用 [{app.title}]')
                 # 如果当前实例是子应用 → 直接报错禁止
                 if self.is_sub_app:
                     raise RuntimeError(
@@ -342,7 +342,6 @@ class Lumary(FastAPI):
                 _logger.info(f'已成功挂载子应用 [{app.title} -> {mount_path}]')
 
         # 子应用挂载结束
-        _logger.info(f'子应用挂载完成，成功挂载 {[app.title for app in success_mounted_list]}')
         return success_mounted_list
 
     @asynccontextmanager
