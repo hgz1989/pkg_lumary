@@ -43,7 +43,7 @@ class Lumary(FastAPI):
     """
 
     # 减少内存占用 + 提升属性访问速度
-    __slots__ = ('is_sub_app', '_hook_registry', '_start_time')
+    __slots__ = ('is_sub_app', '_hook_registry', '_start_time', '_sub_apps_count', '_routes_count')
 
     def __init__(
             self,

@@ -80,7 +80,7 @@ class WSConnectionManager:
     """
 
     __slots__ = (
-        '_connections', '_groups', '_metadata', '_last_seen',
+        '_connections', '_groups', '_conn_groups', '_metadata', '_last_seen',
         '_redis', '_pubsub', '_listen_task', '_instance_id', '_redis_channel',
         '_mqtt_client', '_mqtt_topic'
     )
@@ -89,6 +89,7 @@ class WSConnectionManager:
         """初始化"""
         self._connections: dict[str, WebSocket] = {}
         self._groups: dict[str, set[str]] = {}
+        self._conn_groups: dict[str, set[str]] = {}  # 反向映射：连接所属的所有分组
         self._metadata: dict[str, dict[str, Any]] = {}  # 连接元数据
         self._last_seen: dict[str, float] = {}  # 最近心跳时间戳
 
@@ -238,6 +239,7 @@ class WSConnectionManager:
 
         if group:
             self._groups.setdefault(group, set()).add(cid)
+            self._conn_groups.setdefault(cid, set()).add(group)
 
         _logger.info(f'WebSocket已连接：{cid}' + (f' [分组：{group}]' if group else ''))
         return cid
@@ -254,22 +256,18 @@ class WSConnectionManager:
         ws = self._connections.pop(connection_id, None)
         self._metadata.pop(connection_id, None)
         self._last_seen.pop(connection_id, None)
+        joined_groups = self._conn_groups.pop(connection_id, set())
 
         if ws is None:
             return
 
-        # 从所有分组中移除，并清理空分组（优化：边遍历边记录，避免二次遍历）
-        empty_groups = []
-
-        for g, group_conns in self._groups.items():
-            if connection_id in group_conns:
-                group_conns.remove(connection_id)
-
+        # 从所有分组中移除，并清理空分组（O(1)复杂度）
+        for g in joined_groups:
+            group_conns = self._groups.get(g)
+            if group_conns:
+                group_conns.discard(connection_id)
                 if not group_conns:
-                    empty_groups.append(g)
-
-        for g in empty_groups:
-            del self._groups[g]
+                    del self._groups[g]
 
         # 安全关闭连接
         try:
@@ -327,6 +325,7 @@ class WSConnectionManager:
         if connection_id not in self._connections:
             raise KeyError(f'连接 {connection_id} 不存在')
         self._groups.setdefault(group, set()).add(connection_id)
+        self._conn_groups.setdefault(connection_id, set()).add(group)
         _logger.debug(f'WebSocket {connection_id} 已加入分组：{group}')
 
     def leave_group(self, connection_id: str, group: str) -> None:
@@ -345,6 +344,10 @@ class WSConnectionManager:
         conns.discard(connection_id)
         if not conns:
             del self._groups[group]
+            
+        conn_groups = self._conn_groups.get(connection_id)
+        if conn_groups:
+            conn_groups.discard(group)
 
         _logger.debug(f'WebSocket {connection_id} 已离开分组：{group}')
 

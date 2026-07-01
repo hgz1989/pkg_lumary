@@ -66,7 +66,8 @@ def json_dump(obj: Any, fp: Any) -> None:
         fp: 文件指针(支持 .write() 方法的对象)
     """
     if ORJSON_INSTALLED:
-        fp.write(orjson.dumps(obj))  # type: ignore
+        # orjson.dumps返回bytes，需要解码为str以兼容大多数以'w'模式打开的文件
+        fp.write(orjson.dumps(obj).decode('utf-8'))  # type: ignore
     else:
         json.dump(obj, fp, ensure_ascii=False, separators=(',', ':'))
 

@@ -10,7 +10,7 @@ from logging.handlers import TimedRotatingFileHandler
 from pathlib import Path
 from typing import Any
 
-from .middleware import get_request_id
+from .middleware import request_id_ctx_var
 
 # -------------------------------------
 # 全局注入request_id到日志记录
@@ -29,7 +29,7 @@ def _record_factory(*args: Any, **kwargs: Any) -> logging.LogRecord:
         注入了request_id属性的日志记录对象
     """
     record = old_factory(*args, **kwargs)
-    record.request_id = get_request_id() or '-'
+    record.request_id = request_id_ctx_var.get() or '-'
     return record
 
 
@@ -71,9 +71,9 @@ for logger_name in only_takeover:
     if logger_name in ('uvicorn.error', 'uvicorn.access'):
         logger.addFilter(UvicornNameRewriteFilter())
 
-# logging.getLogger('asyncio').setLevel(logging.WARNING)
-# logging.getLogger('httpx').setLevel(logging.WARNING)
-# logging.getLogger('urllib3').setLevel(logging.WARNING)
+logging.getLogger('asyncio').setLevel(logging.WARNING)
+logging.getLogger('httpx').setLevel(logging.WARNING)
+logging.getLogger('urllib3').setLevel(logging.WARNING)
 
 
 # -------------------------------------
@@ -121,7 +121,10 @@ class _MonthlyRotatingFileHandler(MultiProcessTimedRotatingFileHandler):
         dt = datetime.fromtimestamp(current_time)
 
         # 下月第一天的零点
-        next_month = datetime(dt.year + 1, 1, 1) if dt.month == 12 else datetime(dt.year, dt.month + 1, 1)
+        if dt.month == 12:
+            next_month = datetime(dt.year + 1, 1, 1)
+        else:
+            next_month = datetime(dt.year, dt.month + 1, 1)
 
         return next_month.timestamp()
 

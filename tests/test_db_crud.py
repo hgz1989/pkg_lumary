@@ -14,7 +14,7 @@ from lumary.db.sa.crud import CRUDBase
 from lumary.db.sa.engine import create_db_engine
 from lumary.db.sa.model import ModelBase
 from lumary.db.sa.session import SessionFactory
-from lumary.db.sa.mixins import SoftDeleteMixin
+from lumary.common.mixins.sa import SoftDeleteMixin
 
 
 # ──────────────────────────────────────────────
