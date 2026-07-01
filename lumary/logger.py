@@ -8,10 +8,9 @@ import sys
 from datetime import datetime
 from logging.handlers import TimedRotatingFileHandler
 from pathlib import Path
-
 from typing import Any
 
-from .context import get_request_id
+from .middleware import request_id_ctx_var
 
 # -------------------------------------
 # 全局注入request_id到日志记录
@@ -30,7 +29,7 @@ def _record_factory(*args: Any, **kwargs: Any) -> logging.LogRecord:
         注入了request_id属性的日志记录对象
     """
     record = old_factory(*args, **kwargs)
-    record.request_id = get_request_id() or '-'
+    record.request_id = request_id_ctx_var.get() or '-'
     return record
 
 
@@ -80,7 +79,23 @@ logging.getLogger('urllib3').setLevel(logging.WARNING)
 # -------------------------------------
 # 文件轮转
 # -------------------------------------
-class _MonthlyRotatingFileHandler(TimedRotatingFileHandler):
+class MultiProcessTimedRotatingFileHandler(TimedRotatingFileHandler):
+    """支持多进程安全的按时间轮转处理器"""
+
+    def doRollover(self) -> None:
+        """执行轮转"""
+        try:
+            super().doRollover()
+        except PermissionError:
+            # 没抢到锁，说明其他进程正在轮转，等待对方完成即可
+            # 我们直接重新打开新的文件流即可
+            if self.stream:
+                self.stream.close()
+                self.stream = None
+            self.stream = self._open()
+
+
+class _MonthlyRotatingFileHandler(MultiProcessTimedRotatingFileHandler):
     """按月轮转的日志处理器，以每月1日00:00:00为节点"""
 
     def __init__(self, filename: str, backup_count: int = 12, encoding: str = 'utf-8'):
@@ -114,7 +129,7 @@ class _MonthlyRotatingFileHandler(TimedRotatingFileHandler):
         return next_month.timestamp()
 
 
-class _YearlyRotatingFileHandler(TimedRotatingFileHandler):
+class _YearlyRotatingFileHandler(MultiProcessTimedRotatingFileHandler):
     """按年轮转的日志处理器，以每年1月1日00:00:00为节点"""
 
     def __init__(self, filename: str, backup_count: int = 5, encoding: str = 'utf-8'):
@@ -285,7 +300,7 @@ def setup_logger(
                 )
             else:
                 when, interval = _ROTATION_MAP[rotation_key]
-                file_handler = TimedRotatingFileHandler(
+                file_handler = MultiProcessTimedRotatingFileHandler(
                     filename=str(file_path), when=when, interval=interval,
                     backupCount=backup_count, encoding=encoding
                 )

@@ -8,13 +8,13 @@ from datetime import datetime, timedelta
 
 
 def add_datetime(
-    dt: datetime,
-    years: int = 0,
-    months: int = 0,
-    days: int = 0,
-    hours: int = 0,
-    minutes: int = 0,
-    seconds: int = 0,
+        dt: datetime,
+        years: int = 0,
+        months: int = 0,
+        days: int = 0,
+        hours: int = 0,
+        minutes: int = 0,
+        seconds: int = 0,
 ) -> datetime:
     """给datetime对象添加指定的年月日时分秒，正确处理闰年、月份天数差异
 
@@ -47,3 +47,22 @@ def add_datetime(
     day = min(dt.day, last_day)
 
     return dt.replace(year=year, month=month, day=day)
+
+
+def parse_datetime(val: str | datetime | None) -> datetime | None:
+    """解析日期时间
+
+    Args:
+        val: 日期时间字符串或datetime对象
+
+    Returns:
+        解析后的datetime对象
+    """
+    if val is None:
+        return None
+    if isinstance(val, datetime):
+        return val
+    try:
+        return datetime.fromisoformat(str(val).replace('Z', '+00:00'))
+    except ValueError:
+        return None

@@ -5,7 +5,8 @@
 """
 from functools import cache
 from logging import getLogger
-from typing import TypeAlias, Any, Callable, Awaitable, Sequence, Mapping
+from typing import TypeAlias, Any
+from collections.abc import Callable, Awaitable, Sequence, Mapping
 
 from fastapi import Request, status
 from fastapi.exceptions import RequestValidationError

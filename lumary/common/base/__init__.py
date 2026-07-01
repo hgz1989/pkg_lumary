@@ -3,8 +3,8 @@
 @CreateDate : 2026/5/18
 @Description: 基础类
 """
-from .singleton import Singleton
+from .singleton import ProcessLocalSingleton
 
-__all__ = ['Singleton']
+__all__ = ['ProcessLocalSingleton']
 
 

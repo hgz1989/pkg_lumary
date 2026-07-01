@@ -2,6 +2,24 @@
 
 本文档用于记录 `lumary` 框架的所有显著变更、新特性以及性能优化。
 
+## [0.2.6] - 2026-07-01
+
+### 🚀 新特性 (Features)
+- **响应机制重构 (Response Wrapper Removal)**: 为了保证类型提示的一致性与框架的透明度，移除了黑盒式的 `WrapAPIRoute` 自动响应包装拦截器。业务路由现在需显式声明 `response_model=APIResponse[...]` 并使用 `response_success` / `response_fail` 方法进行标准化数据返回。
+- **框架去策略化 (Process Lock Removal)**: 彻底移除了框架内置的 `CrossProcessLock` 机制（`lumary/common/utils/locks.py`），并清理了 `mqtt.py` 和 `lifespan.py` 中残留的多进程 Leader 选举逻辑。`lumary` 回归纯粹的机制提供者角色，应用层的进程间同步职责完全交由业务项目自行实现。
+- **数据库延迟初始化**: 重构 `SessionFactory` 以支持 `init(engine)` 延迟初始化模式，并保证在生命周期钩子（`on_startup`）执行前，业务代码可以安全地使用 `@service` 装饰器，彻底消除了“数据库未连接”带来的模块加载报错。
+
+### ⚡ 性能优化 (Performance)
+- **核心类内存优化**: 修复了 `Lumary` 类中 `__slots__` 属性的遗漏（补充了 `_sub_apps_count` 和 `_routes_count`），彻底杜绝实例字典的生成，降低多实例挂载场景下的内存占用。
+- **WebSocket 断开连接提速**: `WSConnectionManager.disconnect` 引入反向映射表 `self._conn_groups`，将移除客户端时查找所属分组的时间复杂度从 O(N) 降维到了 O(1)。
+- **ASGI 中间件提速**: 优化 `RequestIdMiddleware` 内部逻辑，直接遍历列表获取 ASGI headers，移除了不必要的字典转换步骤，极大提升了高并发下的流式响应性能。
+
+### 🧹 重构与规范 (Refactoring)
+- **模块内聚性提升**: 将依赖 `ContextVar` 的 `request_id_ctx_var` 变量从 `common/context.py` 直接移动至其管控模块 `middleware.py` 中，并移除了冗余的 `context.py`，消除了跨模块的脏依赖。
+
+### 🐛 问题修复 (Bug Fixes)
+- **文件写入稳定性**: 修复了 `strings.py` 中 `json_dump` 在启用 `orjson` 时可能抛出 `TypeError: write() argument must be str, not bytes` 的崩溃隐患，增加了自动的文本流解码处理。
+
 ## [0.2.4] - 2026-06-25
 
 ### 🚀 新特性 (Features)

@@ -3,37 +3,29 @@
 @CreateDate : 2026/5/14
 @Description: Lumary应用核心类与生命周期管理
 """
-import sys
 from contextlib import asynccontextmanager, AsyncExitStack
 from importlib import import_module
 from logging import getLogger
 from pathlib import Path
 from time import time
-from typing import Any, Self, AsyncGenerator
+from typing import Any, Self
+from collections.abc import AsyncGenerator
 
-from fastapi import FastAPI, APIRouter, Request
+from fastapi import FastAPI
 from starlette.middleware import Middleware
 from starlette.middleware.cors import CORSMiddleware
 from starlette.routing import Mount
 
 from .__version__ import __version__ as lumary_version
-from .common import set_log_level
-from .common.utils import get_system_metrics
 from .handlers import build_exception_handlers
 from .lifespan import (
     HookRegistry,
     default_registry,
     fastapi_lifespan
 )
+from .logger import set_log_level
 from .middleware import RequestIdMiddleware
 from .openapi import configure_openapi_schema
-from .routing import WrapAPIRoute
-from .schemas import (
-    APIResponse,
-    SystemHealthOut,
-    SystemInfoOut,
-    SystemMetricsOut
-)
 
 _logger = getLogger(__name__)
 
@@ -51,7 +43,7 @@ class Lumary(FastAPI):
     """
 
     # 减少内存占用 + 提升属性访问速度
-    __slots__ = ('is_sub_app', '_hook_registry', '_start_time')
+    __slots__ = ('is_sub_app', '_hook_registry', '_start_time', '_sub_apps_count', '_routes_count')
 
     def __init__(
             self,
@@ -94,14 +86,13 @@ class Lumary(FastAPI):
         else:
             self._hook_registry = HookRegistry() if is_sub_app else default_registry
 
-        # 如果是子应用
-        if self.is_sub_app:
+        if self.is_sub_app and 'root_path' in kwargs:
             # 清空子应用根路径
-            if 'root_path' in kwargs:
-                old_root = kwargs.pop('root_path')
-                _logger.info(
-                    f'子应用 [{title}] 传入了 root_path="{old_root}"，为防止路由冲突已被自动清除。请通过主应用的 mount_sub_apps 统一管控路径'
-                )
+            old_root = kwargs.pop('root_path')
+            _logger.info(
+                f'子应用 [{title}] 传入了 root_path="{old_root}"，为防止路由冲突已被自动清除。'
+                f'请通过主应用的 mount_sub_apps 统一管控路径'
+            )
 
         # 默认中间件
         middlewares = []
@@ -163,18 +154,13 @@ class Lumary(FastAPI):
         )
 
         # 记录应用启动时间
-        self._start_time: float = time()
+        self._start_time: int | float = time()
         # 缓存 routes 统计，避免每次遍历
         self._sub_apps_count = 0
         self._routes_count = 0
 
         # 设置自定义文档
         configure_openapi_schema(self)
-
-        # 如果不是子应用
-        if not is_sub_app:
-            # 注册系统内置接口
-            self._register_system_endpoints()
 
     def __del__(self):
         """资源销毁兜底
@@ -186,71 +172,6 @@ class Lumary(FastAPI):
                 self._hook_registry = None
         except (AttributeError, RecursionError):
             pass
-
-    def _register_system_endpoints(self) -> None:
-        """注册系统内置接口（健康检查、详细信息、运行指标）"""
-        router = APIRouter(prefix='/system', tags=['system'], route_class=WrapAPIRoute)
-
-        @router.get('/health', summary='健康检查', response_model=APIResponse[SystemHealthOut, Any])
-        async def health(_request: Request) -> tuple[SystemHealthOut, None, str]:
-            """服务健康检查
-
-            Returns:
-                响应数据
-            """
-            system_health = SystemHealthOut(
-                name=self.title,
-                version=self.version,
-                debug=self.debug
-            )
-            return system_health, None, '服务运行正常'
-
-        @router.get('/info', summary='详细信息', response_model=APIResponse[SystemInfoOut, Any])
-        async def info(_request: Request) -> tuple[SystemInfoOut, None, str]:
-            """查看应用详细信息
-
-            Args:
-                _request: 请求对象
-
-            Returns:
-                响应数据
-            """
-            # 懒加载统计路由信息
-            if self._routes_count == 0:
-                self._sub_apps_count = sum(1 for r in self.routes if isinstance(r, Mount))
-                self._routes_count = len(self.routes)
-
-            system_info = SystemInfoOut(
-                name=self.title,
-                version=self.version,
-                debug=self.debug,
-                sub_apps_count=self._sub_apps_count,
-                routes_count=self._routes_count,
-                python_version=sys.version,
-            )
-            return system_info, None, '获取详细信息成功'
-
-        @router.get('/metrics', summary='运行指标', response_model=APIResponse[SystemMetricsOut, Any])
-        async def metrics(_request: Request) -> tuple[SystemMetricsOut, None, str]:
-            """查看应用运行指标
-
-            Args:
-                _request: 请求对象
-
-            Returns:
-                响应数据
-            """
-
-            uptime = round(time() - self._start_time, 3)
-            metrics_data = get_system_metrics()
-
-            system_metrics = SystemMetricsOut(
-                uptime_seconds=uptime,
-                **metrics_data
-            )
-            return system_metrics, None, '获取运行指标成功'
-
-        self.include_router(router)
 
     def _load_sub_app(self, module_path: str, app_name: str) -> Self | None:
         """动态导入单个子应用
@@ -299,7 +220,6 @@ class Lumary(FastAPI):
 
         apps_folder_name = apps_path.name
 
-        _logger.info('开始挂载子应用')
         success_mounted_list = []
 
         # 遍历目录并强制按名称排序，保证每次启动子应用的挂载顺序一致
@@ -323,6 +243,7 @@ class Lumary(FastAPI):
 
             # 如果导入成功 → 挂载子应用
             if app is not None:
+                _logger.info(f'开始挂载子应用 [{app.title}]')
                 # 如果当前实例是子应用 → 直接报错禁止
                 if self.is_sub_app:
                     raise RuntimeError(
@@ -342,7 +263,6 @@ class Lumary(FastAPI):
                 _logger.info(f'已成功挂载子应用 [{app.title} -> {mount_path}]')
 
         # 子应用挂载结束
-        _logger.info(f'子应用挂载完成，成功挂载 {[app.title for app in success_mounted_list]}')
         return success_mounted_list
 
     @asynccontextmanager

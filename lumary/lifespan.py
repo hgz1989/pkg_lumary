@@ -11,10 +11,9 @@ from logging import getLogger
 from typing import (
     runtime_checkable,
     Protocol,
-    Callable,
-    AsyncGenerator,
     overload
 )
+from collections.abc import Callable, AsyncGenerator
 
 from fastapi import FastAPI
 
@@ -185,40 +184,6 @@ class HookRegistry:
             await self._run_hooks(self._shutdown_hooks, app)
             _logger.info('关闭钩子执行完成')
 
-    @staticmethod
-    async def _run_hooks(hooks: list[_HookItem], app: FastAPI) -> None:
-        """按序执行给定的生命周期钩子列表
-
-        根据注册时缓存的签名结果决定是否注入FastAPI应用实例
-        如果钩子设置了timeout，使用asyncio.wait_for强制超时
-
-        Args:
-            hooks: 包含 _HookItem的列表
-            app: 当前FastAPI应用实例
-
-        Raises:
-            RuntimeError: 当abort_on_exception=True且执行发生异常时抛出
-        """
-        for item in hooks:
-            name = item.func.__name__
-            try:
-                coro = item.func(app) if item.needs_app else item.func()
-                if item.timeout is not None:
-                    await asyncio.wait_for(coro, timeout=item.timeout)
-                else:
-                    await coro
-            except asyncio.TimeoutError:
-                _logger.error(
-                    f'[生命周期钩子执行超时] {name}: 超过 {item.timeout}s'
-                )
-                if item.abort_on_exception:
-                    raise RuntimeError(f'[启动/关闭终止：钩子 {name} 执行超时]')
-            except Exception as e:
-                _logger.error(f'[生命周期钩子执行失败] {name}: {str(e)}')
-
-                if item.abort_on_exception:
-                    raise RuntimeError(f'[启动/关闭终止：钩子 {name} 异常]') from e
-
     def clear(self) -> None:
         """清空所有已注册的钩子（用于测试隔离）"""
         self._startup_hooks.clear()
@@ -383,6 +348,41 @@ class HookRegistry:
             return fn
 
         return decorator(func) if func else decorator
+
+    @staticmethod
+    async def _run_hooks(hooks: list[_HookItem], app: FastAPI) -> None:
+        """按序执行给定的生命周期钩子列表
+
+        根据注册时缓存的签名结果决定是否注入FastAPI应用实例
+        如果钩子设置了timeout，使用asyncio.wait_for强制超时
+
+        Args:
+            hooks: 包含 _HookItem的列表
+            app: 当前FastAPI应用实例
+
+        Raises:
+            RuntimeError: 当abort_on_exception=True且执行发生异常时抛出
+        """
+        for item in hooks:
+            name = item.func.__name__
+
+            try:
+                coro = item.func(app) if item.needs_app else item.func()
+                if item.timeout is not None:
+                    await asyncio.wait_for(coro, timeout=item.timeout)
+                else:
+                    await coro
+            except TimeoutError:
+                _logger.error(
+                    f'[生命周期钩子执行超时] {name}: 超过 {item.timeout}s'
+                )
+                if item.abort_on_exception:
+                    raise RuntimeError(f'[启动/关闭终止：钩子 {name} 执行超时]')
+            except Exception as e:
+                _logger.error(f'[生命周期钩子执行失败] {name}: {str(e)}')
+
+                if item.abort_on_exception:
+                    raise RuntimeError(f'[启动/关闭终止：钩子 {name} 异常]') from e
 
 
 # 默认全局注册表（向后兼容）

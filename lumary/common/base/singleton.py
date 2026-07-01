@@ -1,36 +1,30 @@
 """
 @Author     : zarkhan
 @CreateDate : 2026/5/18
-@Description: 线程安全单例基类
+@Description: 单例与跨进程共享状态基类
 """
-from threading import Lock
+import threading
 from typing import Any
 
 
-class Singleton:
-    """线程安全单例基类
+class ProcessLocalSingleton:
+    """进程内单例基类
 
-    所有需要单例的类，直接继承即可
-    每个子类独立维护自己的实例，互不干扰
+    提供基于双重检查锁定 (Double-Checked Locking) 的线程安全单例实现。
+    
+    警告：
+    在 Uvicorn 多 Worker 模式下，不同进程的内存是物理隔离的。
+    继承此类的对象仅在**当前进程内**是唯一的。如果你需要跨进程共享全局状态，
+    请使用 Redis 或数据库。
     """
-    _instances: dict[type, Any] = {}
-    _lock: Lock = Lock()
 
-    def __new__(cls, *args: Any, **kwargs: Any) -> 'Singleton':
-        """创建单例模式实例
+    _instance = None
+    _lock = threading.Lock()
 
-        使用双重检查锁实现线程安全单例
-        每个子类的实例分开存储，不会相互覆盖
-
-        Args:
-            *args: 创建实例的参数
-            **kwargs: 创建实例的关键字参数
-
-        Returns:
-            当前类的单例实例
-        """
-        if cls not in cls._instances:
+    def __new__(cls, *args: Any, **kwargs: Any) -> Any:
+        """重写实例化逻辑实现单例"""
+        if cls._instance is None:
             with cls._lock:
-                if cls not in cls._instances:
-                    cls._instances[cls] = super().__new__(cls)
-        return cls._instances[cls]
+                if cls._instance is None:
+                    cls._instance = super().__new__(cls)
+        return cls._instance

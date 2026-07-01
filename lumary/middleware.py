@@ -3,9 +3,25 @@
 @CreateDate : 2026/5/14
 @Description: 应用中间件配置
 """
+from contextvars import ContextVar, Token
+from uuid import uuid4
+
 from starlette.types import ASGIApp, Scope, Receive, Send, Message
 
-from .common import generate_request_id, set_request_id
+# 定义用于存储request_id的上下文变量，默认值为None
+request_id_ctx_var: ContextVar[str | None] = ContextVar('request_id', default=None)
+
+def get_request_id() -> str | None:
+    """获取当前请求的Request ID"""
+    return request_id_ctx_var.get()
+
+def set_request_id(request_id: str) -> Token:
+    """设置当前请求的Request ID"""
+    return request_id_ctx_var.set(request_id)
+
+def generate_request_id() -> str:
+    """生成一个随机的Request ID"""
+    return uuid4().hex
 
 
 class RequestIdMiddleware:

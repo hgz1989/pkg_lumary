@@ -3,7 +3,8 @@
 @CreateDate : 2026/5/14
 @Description: SQLAlchemy CRUD泛型基类
 """
-from typing import TypeVar, Generic, Any, Sequence
+from typing import TypeVar, Generic, Any
+from collections.abc import Sequence
 
 from pydantic import BaseModel
 from sqlalchemy import (
@@ -197,12 +198,8 @@ class CRUDBase(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
         op_text = '软删除' if is_deleted else '恢复'
         if hasattr(db_obj, 'is_deleted'):
             # 状态冲突拦截：已是目标状态则禁止操作
-            if getattr(db_obj, 'is_deleted') == is_deleted:
-                if is_deleted:
-                    msg = '当前数据已删除，不支持执行删除操作'
-                else:
-                    msg = '当前数据未删除，不支持执行恢复操作'
-
+            if db_obj.is_deleted == is_deleted:
+                msg = '当前数据已删除，不支持执行删除操作' if is_deleted else '当前数据未删除，不支持执行恢复操作'
                 raise ConflictError(msg)
         else:
             raise ConflictError(f'对象实例不支持{op_text}操作')
@@ -323,7 +320,7 @@ class CRUDBase(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
             stmt = update(self.model).values(
                 is_deleted=True,
                 deleted_at=func.now()
-            ).where(getattr(self.model, 'is_deleted').is_(False))
+            ).where(self.model.is_deleted.is_(False))
         else:
             stmt = delete(self.model)
 
@@ -344,7 +341,7 @@ class CRUDBase(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
         Returns:
             更新后的模型实例和是否发生实际更新
         """
-        if hasattr(db_obj_in, 'is_deleted') and getattr(db_obj_in, 'is_deleted'):
+        if hasattr(db_obj_in, 'is_deleted') and db_obj_in.is_deleted:
             raise BadRequestError('该数据已被删除，无法执行更新操作')
 
         has_real_change = False
@@ -414,9 +411,8 @@ class CRUDBase(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
         """
         db_obj = await self.db.get(self.model, obj_id, options=options, **kwargs)
 
-        if db_obj and hasattr(db_obj, 'is_deleted'):
-            if not include_deleted and getattr(db_obj, 'is_deleted'):
-                return None
+        if db_obj and hasattr(db_obj, 'is_deleted') and not include_deleted and db_obj.is_deleted:
+            return None
 
         return db_obj
 
@@ -432,7 +428,7 @@ class CRUDBase(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
             添加了软删除过滤条件的查询语句
         """
         if hasattr(self.model, 'is_deleted'):
-            stmt = stmt.where(getattr(self.model, 'is_deleted').is_(False))
+            stmt = stmt.where(self.model.is_deleted.is_(False))
 
         return stmt
 

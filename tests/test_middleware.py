@@ -8,7 +8,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from lumary import Lumary
-from lumary.common import get_request_id
+from lumary.middleware import get_request_id
 
 
 # ──────────────────────────────────────────────

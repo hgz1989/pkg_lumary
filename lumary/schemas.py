@@ -5,13 +5,13 @@
 """
 from datetime import datetime, date
 from math import ceil
-from typing import TypeVar, Generic, Sequence
+from typing import TypeVar, Generic
+from collections.abc import Sequence
 
 from pydantic import BaseModel, ConfigDict, Field
 from pydantic.alias_generators import to_pascal
 
-from .__version__ import __version__ as lumary_version
-from .common import get_request_id
+from .middleware import get_request_id
 
 T = TypeVar('T')
 E = TypeVar('E')  # 扩展结构体
@@ -68,35 +68,6 @@ class BatchIds(SchemaBase):
     ids: list[int] | list[str] = Field(description='ID列表', min_length=1)
 
 
-class SystemHealthOut(SchemaBase):
-    """系统健康检查输出"""
-    status: str = Field(default='OK', description='系统状态')
-    name: str = Field(default='Lumary', description='系统名称')
-    version: str = Field(default=lumary_version, description='系统版本')
-    debug: bool = Field(default=False, description='是否处于调试模式')
-
-
-class SystemInfoOut(SchemaBase):
-    """系统详细信息输出"""
-    name: str = Field(description='系统名称')
-    version: str = Field(description='系统版本')
-    debug: bool = Field(description='是否处于调试模式')
-    routes_count: int = Field(description='已注册路由数量')
-    sub_apps_count: int = Field(description='已挂载子应用数量')
-    python_version: str = Field(description='Python运行时版本')
-
-
-class SystemMetricsOut(SchemaBase):
-    """系统运行指标输出"""
-    uptime_seconds: float = Field(description='应用运行时长（秒）')
-    memory_mb: float = Field(description='进程组总内存占用（MB）')
-    cpu_percent: float = Field(description='进程组CPU总使用率（%）')
-    disk_usage_percent: float = Field(description='系统磁盘使用率（%）')
-    workers_count: int = Field(description='当前工作进程数量')
-    threads_count: int = Field(description='当前活动线程数量')
-    tasks_count: int = Field(description='当前异步任务数量')
-
-
 class PageData(SchemaBase, Generic[T]):
     """通用分页响应数据（全量信息）"""
     items: Sequence[T] = Field(default_factory=list, description='当前页数据列表')
@@ -113,7 +84,7 @@ class PageData(SchemaBase, Generic[T]):
             page: int,
             size: int,
             total: int
-    ) -> PageData[T]:
+    ) -> 'PageData[T]':
         """根据查询结果构建分页响应
 
         自动计算总页数，避免调用方重复手动计算
@@ -191,7 +162,7 @@ def response_success(
 
 def response_fail(
         code: int,
-        message: str,
+        message: str = '操作失败',
         extra: E | None = None
 ) -> APIResponse[T, E]:
     """返回失败响应快捷方法

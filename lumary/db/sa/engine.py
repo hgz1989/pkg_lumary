@@ -3,13 +3,11 @@
 @CreateDate : 2026/5/14
 @Description: SQLAlchemy引擎与连接管理
 """
-from typing import Mapping, Any
+from typing import Any
+from collections.abc import Mapping
 from urllib.parse import urlparse
 
-from sqlalchemy.ext.asyncio import (
-    AsyncEngine,
-    create_async_engine
-)
+from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 
 # 定义支持的异步驱动列表
 ASYNC_DRIVERS = frozenset({'asyncpg', 'asyncmy', 'aiomysql', 'aiosqlite', 'aioodbc'})

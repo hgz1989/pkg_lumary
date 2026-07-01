@@ -15,7 +15,7 @@ try:
     ORJSON_INSTALLED = True
 except ImportError:
     ORJSON_INSTALLED = False
-    orjson = None
+    orjson: Any = None
 
 
 def camel_to_snake(s: str) -> str:
@@ -56,6 +56,22 @@ def random_string(length: int = 16) -> str:
     return ''.join(random.choices(chars, k=length))
 
 
+def json_dump(obj: Any, fp: Any) -> None:
+    """高性能JSON写入文件
+
+    如果环境安装了orjson，则使用orjson加速写入；否则回退到标准库json
+
+    Args:
+        obj: 要序列化的对象
+        fp: 文件指针(支持 .write() 方法的对象)
+    """
+    if ORJSON_INSTALLED:
+        # orjson.dumps返回bytes，需要解码为str以兼容大多数以'w'模式打开的文件
+        fp.write(orjson.dumps(obj).decode('utf-8'))  # type: ignore
+    else:
+        json.dump(obj, fp, ensure_ascii=False, separators=(',', ':'))
+
+
 def json_dumps(obj: Any) -> str:
     """高性能JSON序列化
 
@@ -70,6 +86,22 @@ def json_dumps(obj: Any) -> str:
     if ORJSON_INSTALLED:
         return orjson.dumps(obj).decode('utf-8')  # type: ignore
     return json.dumps(obj, ensure_ascii=False, separators=(',', ':'))
+
+
+def json_load(fp: Any) -> Any:
+    """高性能从文件读取JSON
+
+    如果环境安装了orjson，则使用orjson加速读取；否则回退到标准库json
+
+    Args:
+        fp: 文件指针(支持 .read() 方法的对象)
+
+    Returns:
+        反序列化后的Python对象
+    """
+    if ORJSON_INSTALLED:
+        return orjson.loads(fp.read())  # type: ignore
+    return json.load(fp)
 
 
 def json_loads(s: str | bytes) -> Any:
